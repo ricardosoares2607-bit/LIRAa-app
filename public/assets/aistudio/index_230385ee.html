@@ -1,0 +1,1803 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quarteirões para o LIRAa</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  :root {
+    --cabecalho-tabela: #1e293b;
+    --cabecalho-liraa: #c2410c;
+    --fundo-zebrado: #f8fafc;
+    --borda-preta: #000000;
+    --posicao-bg: #f1f5f9;
+    --total-col-bg: #e2e8f0;
+    --liraa-col-bg: #fef3c7;
+    --liraa-col-texto: #9a3412;
+    --sel-bg: #ecfdf5;
+    --sel-posicao-bg: #059669;
+    --sel-liraa-bg: #fde68a;
+    --sel-bloco-bg: #dbeafe;
+    --sel-bloco-borda: #2563eb;
+    --sel-ancora-bg: #93c5fd;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    margin: 0;
+    padding: 16px;
+    background: #e2e8f0;
+    color: #000;
+  }
+
+  .topo { text-align: center; margin-bottom: 8px; }
+  .topo h1 { color: #000; font-size: 20px; margin: 0; font-weight: 900; text-transform: uppercase; }
+  .topo p { color: #475569; font-size: 13px; margin: 3px 0 0; font-weight: bold; }
+
+  .status-salvamento {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: #059669;
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
+    padding: 3px 10px;
+    border-radius: 20px;
+    margin-top: 4px;
+    transition: all .2s;
+  }
+
+  .barra-acoes {
+    display: flex; justify-content: center; gap: 8px;
+    margin: 10px 0 16px; flex-wrap: wrap;
+  }
+  .btn {
+    padding: 7px 14px; border: 1px solid transparent; border-radius: 5px; cursor: pointer;
+    font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; gap: 5px;
+  }
+  .btn-pdf { background: #0f172a; color: #fff; }
+  .btn-pdf:hover { background: #334155; }
+  .btn-print { background: #2563eb; color: #fff; }
+  .btn-print:hover { background: #1d4ed8; }
+  .btn-backup { background: #047857; color: #fff; }
+  .btn-backup:hover { background: #065f46; }
+  .btn-import { background: #475569; color: #fff; }
+  .btn-import:hover { background: #334155; }
+  .btn-limpar-sel { background: #fff; color: #d97706; border-color: #fcd34d; }
+  .btn-limpar-sel:hover { background: #fffbeb; }
+  .btn-limpar-tudo { background: #fff; color: #b91c1c; border-color: #f87171; }
+  .btn-limpar-tudo:hover { background: #fef2f2; }
+
+  .aviso {
+    background: #fff; border-left: 4px solid #0f172a;
+    padding: 8px 12px; border-radius: 4px;
+    margin: 0 auto 16px; font-size: 12px; max-width: 900px;
+    color: #334155; border: 1px solid #cbd5e1; border-left-width: 4px;
+  }
+
+  #conteudo-pdf { width: 820px; margin: 0 auto; }
+
+  .folha-a4 {
+    width: 820px;
+    height: 1140px;
+    background: #fff;
+    padding: 16px 22px;
+    margin: 0 auto 24px;
+    box-shadow: 0 4px 10px rgba(0,0,0,.15);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+
+  .folha-cabecalho-titulo {
+    text-align: center;
+    border-bottom: 2px solid #000;
+    padding-bottom: 3px;
+    margin-bottom: 6px;
+  }
+  .folha-cabecalho-titulo h2 {
+    font-size: 14px; margin: 0; font-weight: 900;
+    text-transform: uppercase; letter-spacing: .5px;
+  }
+  .folha-cabecalho-titulo span {
+    font-size: 10.5px; font-weight: bold; color: #334155;
+  }
+
+  .tabela-identificacao {
+    width: 100%; border-collapse: collapse;
+    border: 1.5px solid #000; margin-bottom: 8px;
+    font-size: 9px;
+  }
+  .tabela-identificacao td {
+    border: 1px solid #000; padding: 2.5px 5px;
+    vertical-align: middle; text-align: left;
+  }
+  .tabela-identificacao td.campo-label {
+    background: #f1f5f9; font-weight: bold; color: #000;
+    width: 17%; white-space: nowrap; text-transform: uppercase;
+  }
+  .tabela-identificacao td.campo-valor {
+    background: #fff; width: 33%; font-weight: 600;
+    outline: none; cursor: text;
+  }
+  .tabela-identificacao td.campo-valor:focus { background: #eff6ff; }
+
+  .grid-duplo { display: table; width: 100%; table-layout: fixed; }
+  .coluna-tabela { display: table-cell; width: 49%; vertical-align: top; }
+  .coluna-espaco { display: table-cell; width: 2%; }
+
+  /* Wrapper de rolagem — invisível no desktop */
+  .wrapper-tabela {
+    width: 100%;
+  }
+
+  table.tabela-dados, table#tabela-liraa {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 9.5px;
+    background: #fff;
+    border: 1.5px solid var(--borda-preta);
+    font-variant-numeric: tabular-nums;
+    table-layout: fixed;
+  }
+
+  thead th {
+    background: var(--cabecalho-tabela);
+    color: #ffffff;
+    font-weight: 700;
+    padding: 3.5px 1px;
+    font-size: 8.8px;
+    text-align: center;
+    border: 1px solid var(--borda-preta);
+    white-space: nowrap;
+  }
+  thead th.col-liraa { background: var(--cabecalho-liraa); color: #ffffff; }
+
+  td {
+    border: 1px solid var(--borda-preta);
+    padding: 3.8px 1px;
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #000;
+    font-size: 9.5px;
+  }
+
+  tbody tr:nth-child(even):not(.total) td { background: var(--fundo-zebrado); }
+
+  td.posicao {
+    cursor: pointer; user-select: none; font-weight: bold;
+    color: #000; background: var(--posicao-bg);
+  }
+  td.posicao:hover { background: #cbd5e1; }
+
+  td.total-linha { background: var(--total-col-bg); font-weight: bold; color: #000; }
+  td.liraa-calc { background: var(--liraa-col-bg); color: var(--liraa-col-texto); font-weight: 800; font-size: 10px; }
+
+  td.editavel { background: #fff; cursor: text; }
+  tbody tr:nth-child(even):not(.total) td.editavel { background: var(--fundo-zebrado); }
+  td.editavel:hover { background: #e2e8f0; }
+  td.editavel:focus {
+    outline: 2px solid #000; outline-offset: -2px;
+    background: #fff !important;
+  }
+
+  tr.selecionada td { background: var(--sel-bg) !important; color: #064e3b; }
+  tr.selecionada td.posicao { background: var(--sel-posicao-bg) !important; color: #fff; }
+  tr.selecionada td.liraa-calc { background: var(--sel-liraa-bg) !important; color: #78350f; }
+
+  tr.total td {
+    background: #0f172a !important;
+    color: #fff !important;
+    font-weight: bold;
+    padding: 4px 1px;
+    border: 1px solid var(--borda-preta);
+  }
+  tr.total td[data-col="7"] { background: #334155 !important; }
+  tr.total td[data-col="8"] { background: var(--cabecalho-liraa) !important; color: #fff !important; }
+
+  .rodape-pagina1 {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-top: 8px;
+    gap: 16px;
+  }
+
+  .tabela-resumo {
+    width: 290px;
+    border: 1.5px solid #000;
+    margin-right: auto;
+    border-collapse: collapse;
+  }
+  .tabela-resumo th {
+    background: #0f172a; color: #fff;
+    padding: 3.5px; font-size: 9px;
+    text-transform: uppercase; border: 1px solid #000;
+  }
+  .tabela-resumo td {
+    padding: 2.8px 6px; font-size: 9px; font-weight: bold;
+    border: 1px solid #000;
+  }
+  .tabela-resumo td.label-resumo {
+    background: #f1f5f9; text-align: left; width: 65%;
+  }
+  .tabela-resumo td.valor-resumo { background: #fff; text-align: right; }
+  .tabela-resumo tr.total-geral td {
+    background: #0f172a !important; color: #fff !important; font-weight: 900;
+  }
+
+  .bloco-assinatura {
+    width: 380px;
+    border: 1.5px solid #000;
+    padding: 6px 10px;
+    font-size: 8.5px;
+    background: #fafafa;
+    line-height: 1.35;
+  }
+  .linha-campo-ass {
+    border-bottom: 1px solid #000;
+    margin-top: 18px;
+    text-align: center;
+    font-size: 8.5px;
+    font-weight: bold;
+    padding-top: 2px;
+  }
+
+  .rodape-pagina2 {
+    margin-top: 8px;
+    border: 1.5px solid #000;
+    padding: 6px 10px;
+    background: #fafafa;
+    font-size: 9px;
+  }
+
+  .vazio { color: #64748b; font-style: italic; padding: 14px; background: #f8fafc; }
+
+  /* ============ SELEÇÃO EM BLOCO ============ */
+  td.celula-selecionada {
+    background: var(--sel-bloco-bg) !important;
+    outline: 1.5px solid var(--sel-bloco-borda);
+    outline-offset: -1.5px;
+  }
+  td.celula-ancora {
+    background: var(--sel-ancora-bg) !important;
+  }
+
+  /* ============ MENU DE CONTEXTO ============ */
+  .menu-contexto {
+    position: fixed;
+    z-index: 9999;
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    box-shadow: 0 6px 20px rgba(0,0,0,.18);
+    padding: 4px;
+    min-width: 190px;
+    font-size: 12px;
+    font-family: Arial, Helvetica, sans-serif;
+    display: none;
+  }
+  .menu-contexto.aberto { display: block; }
+  .menu-contexto button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 10px;
+    background: transparent;
+    border: 0;
+    border-radius: 4px;
+    cursor: pointer;
+    text-align: left;
+    font-size: 13px;
+    color: #0f172a;
+    font-weight: 600;
+  }
+  .menu-contexto button:hover { background: #eff6ff; }
+  .menu-contexto button:disabled {
+    color: #94a3b8;
+    cursor: not-allowed;
+    background: transparent;
+  }
+  .menu-contexto .atalho {
+    margin-left: auto;
+    color: #64748b;
+    font-weight: 400;
+    font-size: 11px;
+  }
+  .menu-contexto hr {
+    border: 0;
+    border-top: 1px solid #e2e8f0;
+    margin: 4px 2px;
+  }
+
+  /* ============ CAIXA FLUTUANTE DE COLAR ============ */
+  .caixa-colar {
+    position: fixed;
+    z-index: 10000;
+    background: #fff;
+    border: 1px solid #2563eb;
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.25);
+    padding: 12px 14px;
+    width: 340px;
+    max-width: calc(100vw - 16px);
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 12px;
+    display: none;
+  }
+  .caixa-colar.aberto { display: block; }
+  .caixa-colar strong {
+    display: block;
+    font-size: 13px;
+    color: #0f172a;
+    margin-bottom: 4px;
+  }
+  .caixa-colar p {
+    margin: 0 0 8px;
+    color: #475569;
+    font-size: 12px;
+    line-height: 1.35;
+  }
+  .caixa-colar textarea {
+    width: 100%;
+    height: 90px;
+    resize: vertical;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    padding: 8px 10px;
+    font-family: inherit;
+    font-size: 13px;
+    box-sizing: border-box;
+  }
+  .caixa-colar .botoes {
+    display: flex;
+    gap: 6px;
+    justify-content: flex-end;
+    margin-top: 8px;
+  }
+  .caixa-colar .botoes button {
+    padding: 8px 14px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .caixa-colar .botoes .btn-ok {
+    background: #2563eb;
+    color: #fff;
+  }
+  .caixa-colar .botoes .btn-ok:hover { background: #1d4ed8; }
+  .caixa-colar .botoes .btn-cancelar {
+    background: #fff;
+    color: #475569;
+    border-color: #cbd5e1;
+  }
+  .caixa-colar .botoes .btn-cancelar:hover { background: #f1f5f9; }
+
+  /* ============================================================
+     RESPONSIVO: TABLET / CELULAR
+     ============================================================ */
+  @media (max-width: 900px) {
+    body { padding: 8px; }
+
+    #conteudo-pdf { width: 100%; }
+
+    .folha-a4 {
+      width: 100%;
+      height: auto;
+      min-height: 0;
+      padding: 12px 8px;
+      margin-bottom: 16px;
+    }
+
+    /* Empilha as duas colunas de tabelas */
+    .grid-duplo {
+      display: block;
+      width: 100%;
+    }
+    .coluna-tabela {
+      display: block;
+      width: 100%;
+      margin-bottom: 14px;
+    }
+    .coluna-espaco { display: none; }
+
+    /* Wrapper de rolagem horizontal em cada tabela */
+    .wrapper-tabela {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      border: 1.5px solid var(--borda-preta);
+      background: #fff;
+    }
+    .wrapper-tabela > table.tabela-dados,
+    .wrapper-tabela > table#tabela-liraa {
+      /* Largura mínima: 9 colunas × ~44px = ~400px
+         Assim as células ficam confortáveis e a rolagem aparece se preciso */
+      min-width: 560px;
+      width: 100%;
+      border: 0;
+    }
+
+    /* Células maiores em telas pequenas */
+    table.tabela-dados td,
+    table.tabela-dados th,
+    table#tabela-liraa td,
+    table#tabela-liraa th {
+      padding: 9px 3px;
+      font-size: 11.5px;
+    }
+    table.tabela-dados td.posicao,
+    table#tabela-liraa td.posicao {
+      min-width: 44px;
+    }
+    table.tabela-dados th:first-child,
+    table#tabela-liraa th:first-child {
+      min-width: 44px;
+    }
+    table.tabela-dados th:nth-child(2),
+    table#tabela-liraa th:nth-child(2) {
+      min-width: 90px;
+    }
+
+    /* Cabeçalho de identificação: empilhado (label acima, valor abaixo) */
+    .tabela-identificacao,
+    .tabela-identificacao tbody,
+    .tabela-identificacao tr,
+    .tabela-identificacao td {
+      display: block;
+      width: 100%;
+    }
+    .tabela-identificacao tr {
+      border-bottom: 1px solid #000;
+    }
+    .tabela-identificacao tr:last-child { border-bottom: 0; }
+    .tabela-identificacao td {
+      border: 0;
+      border-bottom: 1px dotted #cbd5e1;
+      padding: 6px 8px;
+      font-size: 11px;
+      text-align: left;
+    }
+    .tabela-identificacao td.campo-label {
+      width: 100%;
+      background: #f1f5f9;
+      border-bottom: 1px solid #e2e8f0;
+      font-size: 10.5px;
+      padding: 4px 8px;
+    }
+    .tabela-identificacao td.campo-valor {
+      width: 100%;
+      padding: 8px;
+      font-size: 12.5px;
+      min-height: 34px;
+      display: flex;
+      align-items: center;
+    }
+
+    .folha-cabecalho-titulo h2 { font-size: 15px; }
+    .folha-cabecalho-titulo span { font-size: 11.5px; }
+
+    /* Botões maiores */
+    .btn { padding: 10px 14px; font-size: 13px; }
+
+    /* Menu de contexto mais confortável */
+    .menu-contexto button {
+      padding: 12px 14px;
+      font-size: 14px;
+      min-height: 44px;
+    }
+
+    /* Resumo / assinatura empilhados */
+    .rodape-pagina1 {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 10px;
+    }
+    .tabela-resumo { width: 100%; }
+    .bloco-assinatura { width: 100%; }
+
+    .tabela-resumo td,
+    .tabela-resumo th { padding: 6px 8px; font-size: 11px; }
+
+    .aviso { font-size: 12px; }
+
+    /* Dica de rolagem horizontal */
+    .dica-rolagem {
+      display: block;
+      font-size: 11px;
+      color: #64748b;
+      text-align: center;
+      margin: -6px 0 10px;
+      font-style: italic;
+    }
+  }
+
+  /* Dica de rolagem: só aparece no mobile */
+  .dica-rolagem { display: none; }
+
+  @media print {
+    @page { size: A4 portrait; margin: 4mm; }
+    body { background: #fff; padding: 0; margin: 0; }
+    .topo, .barra-acoes, .aviso, .menu-contexto, .caixa-colar, .dica-rolagem { display: none !important; }
+    #conteudo-pdf { width: 100% !important; margin: 0 !important; }
+
+    .folha-a4 {
+      width: 100% !important;
+      height: 285mm !important;
+      box-shadow: none !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      page-break-after: always;
+      break-after: page;
+    }
+    .folha-a4:last-of-type { page-break-after: auto; break-after: auto; }
+
+    * {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+      color-adjust: exact !important;
+    }
+  }
+</style>
+</head>
+<body>
+
+<div class="topo">
+  <h1>Quarteirões para o LIRAa</h1>
+  <p>Imóveis bases</p>
+  <div class="status-salvamento" id="status-storage">● Salvo no navegador</div>
+</div>
+
+<div class="barra-acoes">
+  <button class="btn btn-pdf" id="btn-pdf-acao" onclick="gerarPDF()">📄 Baixar PDF</button>
+  <button class="btn btn-print" onclick="window.print()">🖨️ Imprimir (Ctrl+P)</button>
+  <button class="btn btn-backup" onclick="exportarBackup()">💾 Exportar Backup (.json)</button>
+  <button class="btn btn-import" onclick="document.getElementById('input-import').click()">📂 Importar Backup</button>
+  <input type="file" id="input-import" accept=".json" style="display:none" onchange="importarBackup(event)">
+  <button class="btn btn-limpar-sel" onclick="limparSelecoes()">🗑 Limpar Seleções</button>
+  <button class="btn btn-limpar-tudo" onclick="limparTudo()">⚠️ Limpar Tudo</button>
+</div>
+
+<div class="aviso">
+  <strong>Salvamento Automático Ativo:</strong> Seus dados ficam salvos neste navegador. Você pode fechar a página ou desligar o computador com segurança. Utilize <strong>Exportar Backup</strong> para salvar uma cópia definitiva em seu computador.
+  <br>
+  <strong>Dica (computador):</strong> clique e arraste o mouse sobre várias células para selecioná-las em bloco; use <strong>Ctrl+C</strong>, <strong>Ctrl+X</strong>, <strong>Ctrl+V</strong> e <strong>Delete</strong>. Clique com o <strong>botão direito</strong> numa seleção para abrir o menu.
+  <br>
+  <strong>Dica (tablet/celular):</strong> arraste o dedo sobre as células para selecionar em bloco e faça <strong>toque longo</strong> (~0,5 s) sobre a seleção para abrir o menu.
+</div>
+
+<div id="conteudo-pdf">
+
+  <!-- ===================== PÁGINA 1 ===================== -->
+  <div class="folha-a4" data-pdf-folha>
+    <div>
+      <div class="folha-cabecalho-titulo">
+        <h2>Quarteirões para o LIRAa</h2>
+        <span>Imóveis bases • Página 1</span>
+      </div>
+
+      <table class="tabela-identificacao">
+        <tr>
+          <td class="campo-label">Unidade Federal:</td>
+          <td class="campo-valor" contenteditable="true" data-sync="uf" spellcheck="false"></td>
+          <td class="campo-label">Subdistrito:</td>
+          <td class="campo-valor" contenteditable="true" data-sync="subdistrito" spellcheck="false"></td>
+        </tr>
+        <tr>
+          <td class="campo-label">Distrito:</td>
+          <td class="campo-valor" contenteditable="true" data-sync="distrito" spellcheck="false"></td>
+          <td class="campo-label">Sublocal:</td>
+          <td class="campo-valor" contenteditable="true" data-sync="sublocal" spellcheck="false"></td>
+        </tr>
+        <tr>
+          <td class="campo-label">Município:</td>
+          <td class="campo-valor" contenteditable="true" data-sync="municipio" spellcheck="false"></td>
+          <td class="campo-label">Categoria:</td>
+          <td class="campo-valor" contenteditable="true" data-sync="categoria" spellcheck="false"></td>
+        </tr>
+        <tr>
+          <td class="campo-label">Localidade:</td>
+          <td class="campo-valor" contenteditable="true" data-sync="localidade" spellcheck="false"></td>
+          <td class="campo-label">Total de Quarteirões:</td>
+          <td class="campo-valor campo-total-quarteiroes" contenteditable="true" data-sync="total_quart" spellcheck="false">0</td>
+        </tr>
+      </table>
+
+      <div class="dica-rolagem">← Deslize a tabela para os lados para ver todas as colunas →</div>
+
+      <div class="grid-duplo">
+        <div class="coluna-tabela">
+          <div class="wrapper-tabela">
+            <table id="tabela-1" class="tabela-dados" data-offset="0">
+              <colgroup>
+                <col style="width:10%"><col style="width:16%"><col style="width:7%"><col style="width:7%">
+                <col style="width:7%"><col style="width:7%"><col style="width:7%"><col style="width:13%"><col style="width:12%">
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>Posição</th><th>Quarteirão</th><th>R</th><th>C</th><th>TB</th>
+                  <th>PE</th><th>O</th><th>TOTAL</th><th class="col-liraa">LIRAa</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="coluna-espaco"></div>
+
+        <div class="coluna-tabela">
+          <div class="wrapper-tabela">
+            <table id="tabela-2" class="tabela-dados" data-offset="32">
+              <colgroup>
+                <col style="width:10%"><col style="width:16%"><col style="width:7%"><col style="width:7%">
+                <col style="width:7%"><col style="width:7%"><col style="width:7%"><col style="width:13%"><col style="width:12%">
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>Posição</th><th>Quarteirão</th><th>R</th><th>C</th><th>TB</th>
+                  <th>PE</th><th>O</th><th>TOTAL</th><th class="col-liraa">LIRAa</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="rodape-pagina1">
+      <table class="tabela-resumo">
+        <thead>
+          <tr><th colspan="2">Resumo Geral de Imóveis</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="label-resumo">R (Residencial)</td><td class="valor-resumo" id="resumo-r">0</td></tr>
+          <tr><td class="label-resumo">C (Comércio)</td><td class="valor-resumo" id="resumo-c">0</td></tr>
+          <tr><td class="label-resumo">TB (Terreno Baldio)</td><td class="valor-resumo" id="resumo-tb">0</td></tr>
+          <tr><td class="label-resumo">PE (Ponto Estratégico)</td><td class="valor-resumo" id="resumo-pe">0</td></tr>
+          <tr><td class="label-resumo">O (Outros)</td><td class="valor-resumo" id="resumo-o">0</td></tr>
+          <tr class="total-geral">
+            <td class="label-resumo" style="background:#0f172a; color:#fff;">TOTAL GERAL</td>
+            <td class="valor-resumo" id="resumo-total" style="background:#0f172a; color:#fff;">0</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="bloco-assinatura">
+        <strong>Controle e Validação dos Imóveis Bases</strong><br>
+        <span>Declaro que os dados dos estratos e contagem dos quarteirões conferem com o cadastro de campo atualizado.</span>
+        <div class="linha-campo-ass">Assinatura do Supervisor / Coordenador</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== PÁGINA 2 ===================== -->
+  <div class="folha-a4" data-pdf-folha>
+    <div>
+      <div class="folha-cabecalho-titulo">
+        <h2>Quarteirões para o LIRAa</h2>
+        <span>Imóveis bases • Página 2</span>
+      </div>
+
+      <table class="tabela-identificacao">
+        <tr>
+          <td class="campo-label">Unidade Federal:</td>
+          <td class="campo-valor" contenteditable="true" data-sync="uf" spellcheck="false"></td>
+          <td class="campo-label">Subdistrito:</td>
+          <td class="campo-valor" contenteditable="true" data-sync="subdistrito" spellcheck="false"></td>
+        </tr>
+        <tr>
+          <td class="campo-label">Distrito:</td>
+          <td class="campo-valor" contenteditable="true" data-sync="distrito" spellcheck="false"></td>
+          <td class="campo-label">Sublocal:</td>
+          <td class="campo-valor" contenteditable="true" data-sync="sublocal" spellcheck="false"></td>
+        </tr>
+        <tr>
+          <td class="campo-label">Município:</td>
+          <td class="campo-valor" contenteditable="true" data-sync="municipio" spellcheck="false"></td>
+          <td class="campo-label">Categoria:</td>
+          <td class="campo-valor" contenteditable="true" data-sync="categoria" spellcheck="false"></td>
+        </tr>
+        <tr>
+          <td class="campo-label">Localidade:</td>
+          <td class="campo-valor" contenteditable="true" data-sync="localidade" spellcheck="false"></td>
+          <td class="campo-label">Total de Quarteirões:</td>
+          <td class="campo-valor campo-total-quarteiroes" contenteditable="true" data-sync="total_quart" spellcheck="false">0</td>
+        </tr>
+      </table>
+
+      <div class="dica-rolagem">← Deslize a tabela para os lados para ver todas as colunas →</div>
+
+      <div class="grid-duplo">
+        <div class="coluna-tabela">
+          <div class="wrapper-tabela">
+            <table id="tabela-3" class="tabela-dados" data-offset="64">
+              <colgroup>
+                <col style="width:10%"><col style="width:16%"><col style="width:7%"><col style="width:7%">
+                <col style="width:7%"><col style="width:7%"><col style="width:7%"><col style="width:13%"><col style="width:12%">
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>Posição</th><th>Quarteirão</th><th>R</th><th>C</th><th>TB</th>
+                  <th>PE</th><th>O</th><th>TOTAL</th><th class="col-liraa">LIRAa</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="coluna-espaco"></div>
+
+        <div class="coluna-tabela">
+          <div class="wrapper-tabela">
+            <table id="tabela-4" class="tabela-dados" data-offset="96">
+              <colgroup>
+                <col style="width:10%"><col style="width:16%"><col style="width:7%"><col style="width:7%">
+                <col style="width:7%"><col style="width:7%"><col style="width:7%"><col style="width:13%"><col style="width:12%">
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>Posição</th><th>Quarteirão</th><th>R</th><th>C</th><th>TB</th>
+                  <th>PE</th><th>O</th><th>TOTAL</th><th class="col-liraa">LIRAa</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="rodape-pagina2">
+      <strong>Observações e Ocorrências de Campo:</strong><br>
+      <div style="height: 34px; border-bottom: 1px dotted #94a3b8; margin-top: 4px;"></div>
+      <div style="margin-top: 6px; display: flex; justify-content: space-between; font-size: 8.5px; flex-wrap: wrap; gap: 6px;">
+        <span>Data de Levantamento: ____/____/________</span>
+        <span>Município/Estrato: _________________________</span>
+        <span>Equipe Responsável: _________________________</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== PÁGINA 3: TABELA LIRAa ===================== -->
+  <div class="folha-a4" data-pdf-folha>
+    <div>
+      <div class="folha-cabecalho-titulo">
+        <h2>Quarteirões para o LIRAa</h2>
+        <span>Quarteirões Selecionados para Inspeção</span>
+      </div>
+
+      <table class="tabela-identificacao">
+        <tr>
+          <td class="campo-label">Unidade Federal:</td>
+          <td class="campo-valor" contenteditable="true" data-sync="uf" spellcheck="false"></td>
+          <td class="campo-label">Subdistrito:</td>
+          <td class="campo-valor" contenteditable="true" data-sync="subdistrito" spellcheck="false"></td>
+        </tr>
+        <tr>
+          <td class="campo-label">Distrito:</td>
+          <td class="campo-valor" contenteditable="true" data-sync="distrito" spellcheck="false"></td>
+          <td class="campo-label">Sublocal:</td>
+          <td class="campo-valor" contenteditable="true" data-sync="sublocal" spellcheck="false"></td>
+        </tr>
+        <tr>
+          <td class="campo-label">Município:</td>
+          <td class="campo-valor" contenteditable="true" data-sync="municipio" spellcheck="false"></td>
+          <td class="campo-label">Categoria:</td>
+          <td class="campo-valor" contenteditable="true" data-sync="categoria" spellcheck="false"></td>
+        </tr>
+        <tr>
+          <td class="campo-label">Localidade:</td>
+          <td class="campo-valor" contenteditable="true" data-sync="localidade" spellcheck="false"></td>
+          <td class="campo-label">Total de Quarteirões:</td>
+          <td class="campo-valor" id="total-quarteiroes-selecionados" style="cursor:default;background:#f1f5f9;" spellcheck="false">0</td>
+        </tr>
+      </table>
+
+      <div class="dica-rolagem">← Deslize a tabela para os lados para ver todas as colunas →</div>
+
+      <div class="wrapper-tabela">
+        <table id="tabela-liraa">
+          <colgroup>
+            <col style="width:10%"><col style="width:16%"><col style="width:7%"><col style="width:7%">
+            <col style="width:7%"><col style="width:7%"><col style="width:7%"><col style="width:13%"><col style="width:12%">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Posição</th><th>Quarteirão</th><th>R</th><th>C</th><th>TB</th>
+              <th>PE</th><th>O</th><th>TOTAL</th><th class="col-liraa">LIRAa</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ====== MENU DE CONTEXTO ====== -->
+<div class="menu-contexto" id="menu-contexto" role="menu">
+  <button type="button" data-acao="copiar">📋 Copiar <span class="atalho">Ctrl+C</span></button>
+  <button type="button" data-acao="recortar">✂️ Recortar <span class="atalho">Ctrl+X</span></button>
+  <button type="button" data-acao="colar">📥 Colar <span class="atalho">Ctrl+V</span></button>
+  <hr>
+  <button type="button" data-acao="limpar">🗑 Limpar conteúdo <span class="atalho">Del</span></button>
+</div>
+
+<!-- ====== CAIXA FLUTUANTE DE COLAR ====== -->
+<div class="caixa-colar" id="caixa-colar">
+  <strong>Colar na seleção</strong>
+  <p>Toque na caixa abaixo e use o menu <b>Colar</b> do seu sistema (ou <b>Ctrl+V</b>, se tiver teclado). Depois toque em <b>Aplicar</b>.</p>
+  <textarea id="caixa-colar-texto" spellcheck="false" placeholder="Cole aqui..."></textarea>
+  <div class="botoes">
+    <button type="button" class="btn-cancelar" data-acao="cancelar">Cancelar</button>
+    <button type="button" class="btn-ok" data-acao="aplicar">Aplicar</button>
+  </div>
+</div>
+
+<script>
+  const STORAGE_KEY = 'LIRAA_FORM_DATA_STORAGE';
+  const NUM_LINHAS = 32;
+  const NUM_COLUNAS = 9;
+  const COLUNAS_SOMA = [2, 3, 4, 5, 6];
+  const COL_TOTAL_LINHA = 7;
+  const COL_LIRAA = 8;
+  const selecionadas = new Map();
+
+  const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+
+  function criarLinhas(tabelaId) {
+    const tabela = document.querySelector(`#${tabelaId}`);
+    const tbody = tabela.querySelector('tbody');
+    const offset = parseInt(tabela.dataset.offset, 10) || 0;
+    tbody.innerHTML = '';
+
+    for (let i = 1; i <= NUM_LINHAS; i++) {
+      const numeroPosicao = offset + i;
+      const tr = document.createElement('tr');
+      tr.dataset.tabela = tabelaId;
+      tr.dataset.linha = i;
+      tr.dataset.posicao = numeroPosicao;
+
+      for (let c = 0; c < NUM_COLUNAS; c++) {
+        const td = document.createElement('td');
+        if (c === 0) {
+          td.textContent = numeroPosicao;
+          td.classList.add('posicao');
+          td.addEventListener('click', () => toggleLinha(tr));
+        } else if (c === COL_TOTAL_LINHA) {
+          td.classList.add('total-linha');
+        } else if (c === COL_LIRAA) {
+          td.classList.add('liraa-calc');
+        } else {
+          td.classList.add('editavel');
+          td.setAttribute('contenteditable', 'true');
+          td.setAttribute('spellcheck', 'false');
+        }
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+
+    const trTotal = document.createElement('tr');
+    trTotal.classList.add('total');
+    trTotal.dataset.tabela = tabelaId;
+
+    const tdTotalLabel = document.createElement('td');
+    tdTotalLabel.colSpan = 2;
+    tdTotalLabel.textContent = 'TOTAL';
+    trTotal.appendChild(tdTotalLabel);
+
+    for (let c = 2; c < NUM_COLUNAS; c++) {
+      const td = document.createElement('td');
+      td.dataset.col = c;
+      trTotal.appendChild(td);
+    }
+    tbody.appendChild(trTotal);
+  }
+
+  ['tabela-1','tabela-2','tabela-3','tabela-4'].forEach(criarLinhas);
+
+  function calcularLiraa(total) {
+    if (total <= 0) return '';
+    return String(Math.ceil(total / 5)).padStart(2, '0');
+  }
+
+  function recalcularTotalLinha(tr) {
+    if (tr.classList.contains('total')) return;
+    const valores = COLUNAS_SOMA.map(c => {
+      const v = parseInt(tr.children[c].textContent.trim(), 10);
+      return isNaN(v) ? 0 : v;
+    });
+    const soma = valores.reduce((a, b) => a + b, 0);
+    tr.children[COL_TOTAL_LINHA].textContent = soma > 0 ? soma : '';
+    tr.children[COL_LIRAA].textContent = calcularLiraa(soma);
+  }
+
+  function recalcularTotalTabela(tabelaId) {
+    const tabela = document.querySelector(`#${tabelaId}`);
+    if (!tabela) return;
+    const tbody = tabela.querySelector('tbody');
+    const linhas = Array.from(tbody.querySelectorAll('tr:not(.total)'));
+    const trTotal = tbody.querySelector('tr.total');
+    if (!trTotal) return;
+
+    const somas = {};
+    COLUNAS_SOMA.forEach(c => somas[c] = 0);
+    let somaTotalGeral = 0, somaLiraa = 0;
+
+    linhas.forEach(tr => {
+      COLUNAS_SOMA.forEach(c => {
+        const v = parseInt(tr.children[c].textContent.trim(), 10);
+        if (!isNaN(v)) somas[c] += v;
+      });
+      const t = parseInt(tr.children[COL_TOTAL_LINHA].textContent.trim(), 10);
+      if (!isNaN(t)) somaTotalGeral += t;
+      const l = parseInt(tr.children[COL_LIRAA].textContent.trim(), 10);
+      if (!isNaN(l)) somaLiraa += l;
+    });
+
+    COLUNAS_SOMA.forEach(c => {
+      const td = trTotal.querySelector(`td[data-col="${c}"]`);
+      if (td) td.textContent = somas[c] > 0 ? somas[c] : '';
+    });
+    const tdTotal = trTotal.querySelector(`td[data-col="${COL_TOTAL_LINHA}"]`);
+    if (tdTotal) tdTotal.textContent = somaTotalGeral > 0 ? somaTotalGeral : '';
+    const tdLiraa = trTotal.querySelector(`td[data-col="${COL_LIRAA}"]`);
+    if (tdLiraa) tdLiraa.textContent = somaLiraa > 0 ? String(somaLiraa).padStart(2, '0') : '';
+
+    recalcularResumoGeral();
+    atualizarContagemQuarteiroes();
+  }
+
+  function recalcularResumoGeral() {
+    let totR = 0, totC = 0, totTB = 0, totPE = 0, totO = 0;
+
+    ['tabela-1','tabela-2','tabela-3','tabela-4'].forEach(id => {
+      const tb = document.getElementById(id);
+      if (!tb) return;
+      const trTotal = tb.querySelector('tr.total');
+      if (!trTotal) return;
+
+      totR  += parseInt(trTotal.querySelector('td[data-col="2"]')?.textContent || 0, 10) || 0;
+      totC  += parseInt(trTotal.querySelector('td[data-col="3"]')?.textContent || 0, 10) || 0;
+      totTB += parseInt(trTotal.querySelector('td[data-col="4"]')?.textContent || 0, 10) || 0;
+      totPE += parseInt(trTotal.querySelector('td[data-col="5"]')?.textContent || 0, 10) || 0;
+      totO  += parseInt(trTotal.querySelector('td[data-col="6"]')?.textContent || 0, 10) || 0;
+    });
+
+    const geral = totR + totC + totTB + totPE + totO;
+    document.getElementById('resumo-r').textContent = totR;
+    document.getElementById('resumo-c').textContent = totC;
+    document.getElementById('resumo-tb').textContent = totTB;
+    document.getElementById('resumo-pe').textContent = totPE;
+    document.getElementById('resumo-o').textContent = totO;
+    document.getElementById('resumo-total').textContent = geral;
+  }
+
+  function atualizarContagemQuarteiroes() {
+    let contagem = 0;
+    document.querySelectorAll('.tabela-dados tbody tr:not(.total)').forEach(tr => {
+      const quart = tr.children[1].textContent.trim();
+      const total = tr.children[COL_TOTAL_LINHA].textContent.trim();
+      if (quart !== '' || total !== '') contagem++;
+    });
+    document.querySelectorAll('.campo-total-quarteiroes').forEach(el => {
+      el.textContent = contagem;
+    });
+  }
+
+  function recalcularTodosOsTotais() {
+    ['tabela-1','tabela-2','tabela-3','tabela-4'].forEach(recalcularTotalTabela);
+  }
+
+  document.addEventListener('input', e => {
+    const alvo = e.target.closest('[data-sync]');
+    if (!alvo) return;
+    const chave = alvo.dataset.sync;
+    const texto = alvo.textContent;
+
+    document.querySelectorAll(`[data-sync="${chave}"]`).forEach(campo => {
+      if (campo !== alvo) campo.textContent = texto;
+    });
+    salvarNoLocalStorage();
+  });
+
+  function colarDoExcel(evento, tabela) {
+    const texto = (evento.clipboardData || window.clipboardData).getData('text/plain');
+    if (!texto) return;
+    evento.preventDefault();
+
+    const linhas = texto.replace(/\r/g, '').split('\n').filter(l => l.length > 0);
+    const alvo = evento.target.closest('td');
+    if (!alvo) return;
+
+    const tbody = tabela.querySelector('tbody');
+    const trAlvo = alvo.parentElement;
+    const todasAsLinhas = Array.from(tbody.querySelectorAll('tr:not(.total)'));
+    const idxLinhaIni = todasAsLinhas.indexOf(trAlvo);
+    const idxColIni = Array.from(trAlvo.children).indexOf(alvo);
+    if (idxLinhaIni < 0) return;
+
+    linhas.forEach((linhaTexto, i) => {
+      const idxLinha = idxLinhaIni + i;
+      if (idxLinha >= todasAsLinhas.length) return;
+      const celulas = linhaTexto.split('\t');
+      const tr = todasAsLinhas[idxLinha];
+
+      celulas.forEach((valor, j) => {
+        const idxCol = idxColIni + j;
+        if (idxCol >= NUM_COLUNAS || idxCol === 0 || idxCol === COL_TOTAL_LINHA || idxCol === COL_LIRAA) return;
+        tr.children[idxCol].textContent = valor.trim();
+      });
+      recalcularTotalLinha(tr);
+    });
+
+    recalcularTotalTabela(tabela.id);
+    atualizarTabelaLiraa();
+    salvarNoLocalStorage();
+  }
+
+  function chaveLinha(tr) { return tr.dataset.posicao; }
+
+  function toggleLinha(tr) {
+    const chave = chaveLinha(tr);
+    if (selecionadas.has(chave)) {
+      tr.classList.remove('selecionada');
+      selecionadas.delete(chave);
+    } else {
+      tr.classList.add('selecionada');
+      selecionadas.set(chave, tr);
+    }
+    atualizarTabelaLiraa();
+    salvarNoLocalStorage();
+  }
+
+  function atualizarTabelaLiraa() {
+    const tbodyLiraa = document.querySelector('#tabela-liraa tbody');
+    tbodyLiraa.innerHTML = '';
+
+    const lista = Array.from(selecionadas.values()).sort(
+      (a, b) => parseInt(a.dataset.posicao) - parseInt(b.dataset.posicao)
+    );
+
+    const campoTotalSel = document.getElementById('total-quarteiroes-selecionados');
+    if (campoTotalSel) campoTotalSel.textContent = lista.length;
+
+    if (lista.length === 0) {
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.colSpan = NUM_COLUNAS;
+      td.textContent = 'Nenhum quarteirão selecionado ainda.';
+      td.classList.add('vazio');
+      tr.appendChild(td);
+      tbodyLiraa.appendChild(tr);
+      return;
+    }
+
+    lista.forEach(origem => {
+      const tr = document.createElement('tr');
+      for (let i = 0; i < NUM_COLUNAS; i++) {
+        const td = document.createElement('td');
+        td.textContent = origem.children[i].textContent;
+        if (i === 0) td.classList.add('posicao');
+        if (i === COL_TOTAL_LINHA) td.classList.add('total-linha');
+        if (i === COL_LIRAA) td.classList.add('liraa-calc');
+        tr.appendChild(td);
+      }
+      tbodyLiraa.appendChild(tr);
+    });
+  }
+
+  function limparSelecoes() {
+    selecionadas.forEach(tr => tr.classList.remove('selecionada'));
+    selecionadas.clear();
+    atualizarTabelaLiraa();
+    salvarNoLocalStorage();
+  }
+
+  const selecaoBloco = {
+    tabela: null,
+    ancora: null,
+    foco: null
+  };
+
+  function indiceDaCelula(tabela, td) {
+    const tr = td.parentElement;
+    const tbody = tr.parentElement;
+    const linhas = Array.from(tbody.querySelectorAll('tr:not(.total)'));
+    const linhaIdx = linhas.indexOf(tr);
+    const colIdx = Array.from(tr.children).indexOf(td);
+    return { linhaIdx, colIdx };
+  }
+
+  function celulaPorIndice(tabela, linhaIdx, colIdx) {
+    const tbody = tabela.querySelector('tbody');
+    const linhas = Array.from(tbody.querySelectorAll('tr:not(.total)'));
+    const tr = linhas[linhaIdx];
+    if (!tr) return null;
+    return tr.children[colIdx] || null;
+  }
+
+  function limparSelecaoBloco() {
+    document.querySelectorAll('td.celula-selecionada, td.celula-ancora')
+      .forEach(td => td.classList.remove('celula-selecionada', 'celula-ancora'));
+    selecaoBloco.tabela = null;
+    selecaoBloco.ancora = null;
+    selecaoBloco.foco = null;
+  }
+
+  function aplicarSelecaoBloco() {
+    if (!selecaoBloco.tabela || !selecaoBloco.ancora || !selecaoBloco.foco) return;
+
+    document.querySelectorAll('td.celula-selecionada, td.celula-ancora')
+      .forEach(td => td.classList.remove('celula-selecionada', 'celula-ancora'));
+
+    const a = indiceDaCelula(selecaoBloco.tabela, selecaoBloco.ancora);
+    const b = indiceDaCelula(selecaoBloco.tabela, selecaoBloco.foco);
+    const lMin = Math.min(a.linhaIdx, b.linhaIdx);
+    const lMax = Math.max(a.linhaIdx, b.linhaIdx);
+    const cMin = Math.min(a.colIdx, b.colIdx);
+    const cMax = Math.max(a.colIdx, b.colIdx);
+
+    for (let l = lMin; l <= lMax; l++) {
+      for (let c = cMin; c <= cMax; c++) {
+        const td = celulaPorIndice(selecaoBloco.tabela, l, c);
+        if (td && td.classList.contains('editavel')) {
+          td.classList.add('celula-selecionada');
+        }
+      }
+    }
+    selecaoBloco.ancora.classList.add('celula-ancora');
+  }
+
+  function copiarSelecaoBloco(cortar) {
+    if (!selecaoBloco.tabela || !selecaoBloco.ancora || !selecaoBloco.foco) return null;
+
+    const a = indiceDaCelula(selecaoBloco.tabela, selecaoBloco.ancora);
+    const b = indiceDaCelula(selecaoBloco.tabela, selecaoBloco.foco);
+    const lMin = Math.min(a.linhaIdx, b.linhaIdx);
+    const lMax = Math.max(a.linhaIdx, b.linhaIdx);
+    const cMin = Math.min(a.colIdx, b.colIdx);
+    const cMax = Math.max(a.colIdx, b.colIdx);
+
+    const linhas = [];
+    const celulasAfetadas = [];
+    for (let l = lMin; l <= lMax; l++) {
+      const cols = [];
+      for (let c = cMin; c <= cMax; c++) {
+        const td = celulaPorIndice(selecaoBloco.tabela, l, c);
+        cols.push(td ? td.textContent : '');
+        if (cortar && td && td.classList.contains('editavel')) {
+          celulasAfetadas.push(td);
+        }
+      }
+      linhas.push(cols.join('\t'));
+    }
+    return { texto: linhas.join('\n'), celulasAfetadas };
+  }
+
+  function copiarParaClipboard(texto) {
+    if (!texto) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(texto).catch(() => fallbackCopiar(texto));
+    } else {
+      fallbackCopiar(texto);
+    }
+  }
+
+  function fallbackCopiar(texto) {
+    const ta = document.createElement('textarea');
+    ta.value = texto;
+    ta.style.position = 'fixed';
+    ta.style.top = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch (e) {}
+    ta.remove();
+  }
+
+  function colarNaSelecaoBloco(texto) {
+    if (!selecaoBloco.tabela || !selecaoBloco.ancora) return false;
+
+    const linhas = texto.replace(/\r/g, '').split('\n').filter(l => l.length > 0);
+    if (linhas.length === 0) return false;
+
+    const a = indiceDaCelula(selecaoBloco.tabela, selecaoBloco.ancora);
+    const linhasTabela = Array.from(
+      selecaoBloco.tabela.querySelectorAll('tbody tr:not(.total)')
+    );
+
+    let alterou = false;
+    linhas.forEach((linhaTexto, i) => {
+      const tr = linhasTabela[a.linhaIdx + i];
+      if (!tr) return;
+      const celulas = linhaTexto.split('\t');
+      celulas.forEach((valor, j) => {
+        const td = tr.children[a.colIdx + j];
+        if (!td || !td.classList.contains('editavel')) return;
+        td.textContent = valor.trim();
+        alterou = true;
+      });
+      recalcularTotalLinha(tr);
+    });
+
+    if (alterou) {
+      recalcularTotalTabela(selecaoBloco.tabela.id);
+      atualizarTabelaLiraa();
+      salvarNoLocalStorage();
+    }
+    return alterou;
+  }
+
+  function apagarSelecaoBloco() {
+    const dados = copiarSelecaoBloco(true);
+    if (!dados) return;
+    dados.celulasAfetadas.forEach(td => {
+      td.textContent = '';
+      recalcularTotalLinha(td.parentElement);
+    });
+    recalcularTotalTabela(selecaoBloco.tabela.id);
+    atualizarTabelaLiraa();
+    salvarNoLocalStorage();
+  }
+
+  function temSelecaoBloco() {
+    return !!(selecaoBloco.tabela && selecaoBloco.ancora && selecaoBloco.foco);
+  }
+
+  const menuCtx = document.getElementById('menu-contexto');
+  const caixaColar = document.getElementById('caixa-colar');
+  const caixaColarTexto = document.getElementById('caixa-colar-texto');
+
+  function abrirMenuContexto(x, y) {
+    menuCtx.classList.add('aberto');
+    const rect = menuCtx.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let left = x, top = y;
+    if (left + rect.width > vw - 6) left = vw - rect.width - 6;
+    if (top + rect.height > vh - 6) top = vh - rect.height - 6;
+    if (left < 6) left = 6;
+    if (top < 6) top = 6;
+    menuCtx.style.left = left + 'px';
+    menuCtx.style.top = top + 'px';
+  }
+
+  function fecharMenuContexto() {
+    menuCtx.classList.remove('aberto');
+  }
+
+  function abrirCaixaColar() {
+    caixaColar.classList.add('aberto');
+    caixaColarTexto.value = '';
+    let x = window.innerWidth / 2 - 170;
+    let y = window.innerHeight / 2 - 110;
+    if (temSelecaoBloco() && selecaoBloco.ancora) {
+      const r = selecaoBloco.ancora.getBoundingClientRect();
+      x = Math.min(Math.max(8, r.left), window.innerWidth - 350);
+      y = Math.min(Math.max(8, r.bottom + 6), window.innerHeight - 260);
+    }
+    caixaColar.style.left = x + 'px';
+    caixaColar.style.top = y + 'px';
+    setTimeout(() => caixaColarTexto.focus(), 60);
+  }
+
+  function fecharCaixaColar() {
+    caixaColar.classList.remove('aberto');
+    caixaColarTexto.value = '';
+  }
+
+  function aplicarColarDaCaixa() {
+    const texto = caixaColarTexto.value;
+    if (!texto) { fecharCaixaColar(); return; }
+    if (!temSelecaoBloco()) {
+      alert('Selecione primeiro as células de destino (arraste com o dedo ou o mouse).');
+      return;
+    }
+    colarNaSelecaoBloco(texto);
+    fecharCaixaColar();
+  }
+
+  menuCtx.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-acao]');
+    if (!btn) return;
+    const acao = btn.dataset.acao;
+
+    if (acao === 'copiar') {
+      const dados = copiarSelecaoBloco(false);
+      if (dados) copiarParaClipboard(dados.texto);
+
+    } else if (acao === 'recortar') {
+      const dados = copiarSelecaoBloco(true);
+      if (dados) {
+        copiarParaClipboard(dados.texto);
+        dados.celulasAfetadas.forEach(cel => {
+          cel.textContent = '';
+          recalcularTotalLinha(cel.parentElement);
+        });
+        if (selecaoBloco.tabela) {
+          recalcularTotalTabela(selecaoBloco.tabela.id);
+          atualizarTabelaLiraa();
+          salvarNoLocalStorage();
+        }
+      }
+
+    } else if (acao === 'colar') {
+      abrirCaixaColar();
+
+    } else if (acao === 'limpar') {
+      apagarSelecaoBloco();
+    }
+    fecharMenuContexto();
+  });
+
+  caixaColar.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-acao]');
+    if (!btn) return;
+    if (btn.dataset.acao === 'aplicar') aplicarColarDaCaixa();
+    else fecharCaixaColar();
+  });
+
+  caixaColarTexto.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      aplicarColarDaCaixa();
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      fecharCaixaColar();
+    }
+  });
+
+  window.addEventListener('scroll', () => { fecharMenuContexto(); }, true);
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { fecharMenuContexto(); fecharCaixaColar(); }
+  });
+
+  let arrastando = false;
+
+  document.querySelectorAll('.tabela-dados').forEach(tabela => {
+
+    tabela.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      const td = e.target.closest('td.editavel');
+      if (!td) return;
+
+      if (e.shiftKey && selecaoBloco.tabela === tabela && selecaoBloco.ancora) {
+        e.preventDefault();
+        selecaoBloco.foco = td;
+        aplicarSelecaoBloco();
+        return;
+      }
+
+      arrastando = true;
+      selecaoBloco.tabela = tabela;
+      selecaoBloco.ancora = td;
+      selecaoBloco.foco = td;
+      aplicarSelecaoBloco();
+      td.focus({ preventScroll: true });
+    });
+
+    tabela.addEventListener('mouseover', e => {
+      if (!arrastando || !selecaoBloco.tabela) return;
+      const td = e.target.closest('td.editavel');
+      if (!td || td === selecaoBloco.foco) return;
+      selecaoBloco.foco = td;
+      aplicarSelecaoBloco();
+    });
+
+    tabela.addEventListener('contextmenu', e => {
+      const td = e.target.closest('td.editavel');
+      if (!td) return;
+
+      if (!isTouchDevice) {
+        if (td.classList.contains('celula-selecionada') || td.classList.contains('celula-ancora')) {
+          e.preventDefault();
+          abrirMenuContexto(e.clientX, e.clientY);
+          return;
+        }
+        limparSelecaoBloco();
+      }
+    });
+
+    tabela.addEventListener('keydown', e => {
+      const td = e.target.closest('td.editavel');
+      if (!td) return;
+
+      const ctrl = e.ctrlKey || e.metaKey;
+      const tecla = e.key.toLowerCase();
+
+      if (ctrl && tecla === 'c' && temSelecaoBloco()) {
+        e.preventDefault();
+        const dados = copiarSelecaoBloco(false);
+        if (dados) copiarParaClipboard(dados.texto);
+        return;
+      }
+
+      if (ctrl && tecla === 'x' && temSelecaoBloco()) {
+        e.preventDefault();
+        const dados = copiarSelecaoBloco(true);
+        if (dados) {
+          copiarParaClipboard(dados.texto);
+          dados.celulasAfetadas.forEach(cel => {
+            cel.textContent = '';
+            recalcularTotalLinha(cel.parentElement);
+          });
+          recalcularTotalTabela(tabela.id);
+          atualizarTabelaLiraa();
+          salvarNoLocalStorage();
+        }
+        return;
+      }
+
+      if (ctrl && tecla === 'v' && temSelecaoBloco()) {
+        return;
+      }
+
+      if ((e.key === 'Delete' || e.key === 'Backspace') && temSelecaoBloco()) {
+        const a = indiceDaCelula(selecaoBloco.tabela, selecaoBloco.ancora);
+        const b = indiceDaCelula(selecaoBloco.tabela, selecaoBloco.foco);
+        const multi = a.linhaIdx !== b.linhaIdx || a.colIdx !== b.colIdx;
+        if (multi) {
+          e.preventDefault();
+          apagarSelecaoBloco();
+          return;
+        }
+      }
+
+      if (e.key === 'Enter') { e.preventDefault(); td.blur(); return; }
+      if (e.key === 'Escape') { limparSelecaoBloco(); return; }
+    });
+
+    tabela.addEventListener('paste', e => {
+      const td = e.target.closest('td.editavel');
+      if (!td) return;
+
+      const texto = (e.clipboardData || window.clipboardData).getData('text/plain');
+      if (!texto) return;
+
+      if (temSelecaoBloco()) {
+        e.preventDefault();
+        colarNaSelecaoBloco(texto);
+        return;
+      }
+
+      if (/[\t\n\r]/.test(texto)) {
+        colarDoExcel(e, tabela);
+        return;
+      }
+      e.preventDefault();
+      document.execCommand('insertText', false, texto);
+      salvarNoLocalStorage();
+    });
+
+    // ====== TOQUE (tablet/celular) ======
+    let timerToqueLongo = null;
+    let toqueInicialPos = null;
+    let tocando = false;
+    let moveuToque = false;
+
+    tabela.addEventListener('touchstart', e => {
+      if (e.touches.length !== 1) return;
+      const td = e.target.closest('td.editavel');
+      if (!td) return;
+
+      tocando = true;
+      moveuToque = false;
+      toqueInicialPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+
+      selecaoBloco.tabela = tabela;
+      selecaoBloco.ancora = td;
+      selecaoBloco.foco = td;
+      aplicarSelecaoBloco();
+
+      clearTimeout(timerToqueLongo);
+      timerToqueLongo = setTimeout(() => {
+        if (!tocando || moveuToque) return;
+        const rect = td.getBoundingClientRect();
+        abrirMenuContexto(rect.left + rect.width / 2 - 90, rect.bottom + 6);
+        tocando = false;
+      }, 500);
+    }, { passive: true });
+
+    tabela.addEventListener('touchmove', e => {
+      if (!tocando) return;
+      if (e.touches.length !== 1) return;
+
+      const dx = e.touches[0].clientX - toqueInicialPos.x;
+      const dy = e.touches[0].clientY - toqueInicialPos.y;
+      if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+        moveuToque = true;
+        clearTimeout(timerToqueLongo);
+      }
+
+      const el = document.elementFromPoint(e.touches[0].clientX, e.touches[0].clientY);
+      const td = el ? el.closest('td.editavel') : null;
+      if (td && selecaoBloco.tabela === tabela) {
+        if (td !== selecaoBloco.foco) {
+          selecaoBloco.foco = td;
+          aplicarSelecaoBloco();
+        }
+        e.preventDefault();
+      }
+    }, { passive: false });
+
+    tabela.addEventListener('touchend', () => {
+      clearTimeout(timerToqueLongo);
+      tocando = false;
+    }, { passive: true });
+
+    tabela.addEventListener('touchcancel', () => {
+      clearTimeout(timerToqueLongo);
+      tocando = false;
+    }, { passive: true });
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (arrastando) arrastando = false;
+  });
+
+  document.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    if (!e.target.closest('table.tabela-dados') &&
+        !e.target.closest('#menu-contexto') &&
+        !e.target.closest('#caixa-colar')) {
+      limparSelecaoBloco();
+      fecharMenuContexto();
+    }
+  });
+
+  document.addEventListener('touchstart', e => {
+    if (!e.target.closest('table.tabela-dados') &&
+        !e.target.closest('#menu-contexto') &&
+        !e.target.closest('#caixa-colar')) {
+      fecharMenuContexto();
+    }
+  }, { passive: true });
+
+  document.querySelectorAll('.tabela-dados').forEach(tabela => {
+    tabela.addEventListener('input', e => {
+      const td = e.target.closest('td.editavel');
+      if (!td) return;
+      atualizarLinhaEEntorno(td);
+      salvarNoLocalStorage();
+    });
+  });
+
+  function atualizarLinhaEEntorno(td) {
+    const tr = td.parentElement;
+    if (!tr || tr.classList.contains('total')) return;
+    recalcularTotalLinha(tr);
+    const tabela = tr.closest('table');
+    if (tabela) recalcularTotalTabela(tabela.id);
+    if (selecionadas.has(chaveLinha(tr))) atualizarTabelaLiraa();
+  }
+
+  let timeoutSalvar = null;
+
+  function salvarNoLocalStorage() {
+    clearTimeout(timeoutSalvar);
+    const statusEl = document.getElementById('status-storage');
+    statusEl.textContent = '⏳ Salvando...';
+    statusEl.style.color = '#d97706';
+
+    timeoutSalvar = setTimeout(() => {
+      const dados = coletarDadosCompletos();
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(dados));
+        statusEl.textContent = '● Salvo no navegador';
+        statusEl.style.color = '#059669';
+      } catch (e) {
+        statusEl.textContent = '⚠️ Erro ao salvar';
+        statusEl.style.color = '#b91c1c';
+      }
+    }, 250);
+  }
+
+  function coletarDadosCompletos() {
+    const cabecalho = {};
+    document.querySelectorAll('[data-sync]').forEach(campo => {
+      cabecalho[campo.dataset.sync] = campo.textContent;
+    });
+
+    const linhas = [];
+    document.querySelectorAll('.tabela-dados tbody tr:not(.total)').forEach(tr => {
+      const pos = tr.dataset.posicao;
+      const celulas = [];
+      for (let c = 1; c <= 6; c++) {
+        celulas.push(tr.children[c].textContent);
+      }
+      const isSel = tr.classList.contains('selecionada');
+      linhas.push({ pos, celulas, isSel });
+    });
+
+    return { cabecalho, linhas, atualizadoEm: new Date().toISOString() };
+  }
+
+  function restaurarDadosCompletos(dados) {
+    if (!dados) return;
+
+    if (dados.cabecalho) {
+      Object.keys(dados.cabecalho).forEach(chave => {
+        document.querySelectorAll(`[data-sync="${chave}"]`).forEach(campo => {
+          campo.textContent = dados.cabecalho[chave];
+        });
+      });
+    }
+
+    selecionadas.clear();
+    if (dados.linhas && Array.isArray(dados.linhas)) {
+      dados.linhas.forEach(item => {
+        const tr = document.querySelector(`.tabela-dados tbody tr[data-posicao="${item.pos}"]`);
+        if (!tr) return;
+
+        item.celulas.forEach((val, idx) => {
+          tr.children[idx + 1].textContent = val;
+        });
+
+        recalcularTotalLinha(tr);
+
+        if (item.isSel) {
+          tr.classList.add('selecionada');
+          selecionadas.set(chaveLinha(tr), tr);
+        } else {
+          tr.classList.remove('selecionada');
+        }
+      });
+    }
+
+    recalcularTodosOsTotais();
+    atualizarTabelaLiraa();
+  }
+
+  function exportarBackup() {
+    const dados = coletarDadosCompletos();
+    const nomeMuni = (dados.cabecalho && dados.cabecalho.municipio) ? dados.cabecalho.municipio.trim().replace(/\s+/g, '_') : 'LIRAa';
+    const dataHora = new Date().toISOString().slice(0, 10);
+    const nomeArquivo = `Backup_${nomeMuni}_${dataHora}.json`;
+
+    const blob = new Blob([JSON.stringify(dados, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = nomeArquivo;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function importarBackup(evento) {
+    const arquivo = evento.target.files[0];
+    if (!arquivo) return;
+
+    const leitor = new FileReader();
+    leitor.onload = function(e) {
+      try {
+        const dados = JSON.parse(e.target.result);
+        restaurarDadosCompletos(dados);
+        salvarNoLocalStorage();
+        alert('Backup importado com sucesso!');
+      } catch (err) {
+        alert('Erro ao ler o arquivo de backup. Verifique se é um arquivo .json válido.');
+      }
+    };
+    leitor.readAsText(arquivo);
+    evento.target.value = '';
+  }
+
+  function limparTudo() {
+    if (!confirm('Deseja realmente apagar todos os dados digitados e seleções feitas? Esta ação não pode ser desfeita.')) return;
+
+    document.querySelectorAll('[data-sync]').forEach(c => c.textContent = '');
+    document.querySelectorAll('.campo-total-quarteiroes').forEach(c => c.textContent = '0');
+    const campoSelPg3 = document.getElementById('total-quarteiroes-selecionados');
+    if (campoSelPg3) campoSelPg3.textContent = '0';
+
+    document.querySelectorAll('.tabela-dados tbody tr:not(.total)').forEach(tr => {
+      for (let c = 1; c <= 6; c++) tr.children[c].textContent = '';
+      tr.children[COL_TOTAL_LINHA].textContent = '';
+      tr.children[COL_LIRAA].textContent = '';
+      tr.classList.remove('selecionada');
+    });
+
+    selecionadas.clear();
+    limparSelecaoBloco();
+    recalcularTodosOsTotais();
+    atualizarTabelaLiraa();
+    localStorage.removeItem(STORAGE_KEY);
+    const statusEl = document.getElementById('status-storage');
+    statusEl.textContent = '● Dados limpos';
+    statusEl.style.color = '#059669';
+  }
+
+  async function gerarPDF() {
+    const btn = document.getElementById('btn-pdf-acao');
+    const textoOriginal = btn.innerHTML;
+    btn.innerHTML = '⏳ Processando...';
+    btn.disabled = true;
+
+    if (document.activeElement && document.activeElement.blur) {
+      document.activeElement.blur();
+    }
+    limparSelecaoBloco();
+    fecharMenuContexto();
+    fecharCaixaColar();
+
+    try {
+      const jsPDFCtor = (window.jspdf && window.jspdf.jsPDF)
+        ? window.jspdf.jsPDF
+        : (window.jsPDF || null);
+
+      if (!jsPDFCtor || typeof window.html2canvas !== 'function') {
+        throw new Error('Bibliotecas de PDF não carregadas corretamente.');
+      }
+
+      const pdf = new jsPDFCtor({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      const folhas = document.querySelectorAll('[data-pdf-folha]');
+      const A4_LARGURA = 210;
+      const MARGEM_LATERAL = 6;
+      const MARGEM_SUPERIOR = 6;
+      const LARGURA_UTIL = A4_LARGURA - (MARGEM_LATERAL * 2);
+
+      for (let i = 0; i < folhas.length; i++) {
+        const folha = folhas[i];
+
+        const canvas = await window.html2canvas(folha, {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#ffffff'
+        });
+
+        const imgData = canvas.toDataURL('image/jpeg', 0.98);
+        const imgH = (canvas.height * LARGURA_UTIL) / canvas.width;
+
+        if (i > 0) pdf.addPage();
+        pdf.addImage(imgData, 'JPEG', MARGEM_LATERAL, MARGEM_SUPERIOR, LARGURA_UTIL, imgH);
+      }
+
+      pdf.save('Quarteiroes_LIRAa_Imoveis_Bases.pdf');
+    } catch (err) {
+      console.error('Erro na exportação:', err);
+      alert('Ocorreu um erro ao gerar o PDF. Você também pode usar "Imprimir" e salvar em PDF.');
+    } finally {
+      btn.innerHTML = textoOriginal;
+      btn.disabled = false;
+    }
+  }
+
+  const dadosSalvos = localStorage.getItem(STORAGE_KEY);
+  if (dadosSalvos) {
+    try {
+      restaurarDadosCompletos(JSON.parse(dadosSalvos));
+    } catch(e) {
+      console.warn('Erro ao carregar dados salvos:', e);
+      atualizarTabelaLiraa();
+      recalcularTodosOsTotais();
+    }
+  } else {
+    atualizarTabelaLiraa();
+    recalcularTodosOsTotais();
+  }
+</script>
+
+</body>
+</html>

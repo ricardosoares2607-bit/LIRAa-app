@@ -1,0 +1,8 @@
+{
+  "name": "Remix ACE - Sistema Integrado",
+  "description": "Quarteirões para o LIRAa - Imóveis bases. Sistema de cadastro, amostragem estatística e emissão de folhas para levantamento rápido de índices.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
