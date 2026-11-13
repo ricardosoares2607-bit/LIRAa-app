@@ -1,15 +1,283 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { User, onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import {
+  auth,
+  db,
+  signInWithGoogle,
+  logoutFirebase,
+  testConnection,
+  pushReconhecimentoToRtdb,
+  fetchReconhecimentoFromRtdb,
+  subscribeReconhecimentoRtdb,
+  ReconhecimentoPayload,
+  ReconhecimentoLinha
+} from './firebase';
 
 declare global {
   interface Window {
     html2canvas?: any;
     jspdf?: any;
     jsPDF?: any;
+    gerarPDF?: () => void;
+    exportarBackup?: () => void;
+    importarBackup?: (evento: any) => void;
+    limparSelecoes?: () => void;
+    limparTudo?: () => void;
   }
+}
+
+function limparNumeroStr(val: any): string {
+  if (val === undefined || val === null) return '';
+  const s = String(val).trim();
+  if (!s) return '';
+  if (/^\d{1,3}(\.\d{3})+$/.test(s)) {
+    return s.replace(/\./g, '');
+  }
+  return s;
+}
+
+function normalizarReconhecimentoParaBridge(raw: any): ReconhecimentoPayload | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const src = raw.resumo_reconhecimento && typeof raw.resumo_reconhecimento === 'object' ? raw.resumo_reconhecimento : raw;
+  const cab = src.cabecalho || src;
+
+  const mapear = (item: any, idxPadrao: number): ReconhecimentoLinha => {
+    if (!item || typeof item !== 'object') {
+      return { quarteirao: String(idxPadrao), r: '', c: '', tb: '', pe: '', o: '' };
+    }
+    const q = String(item.quarteirao ?? item.Quarteirao ?? item.numero ?? item.num ?? idxPadrao).trim() || String(idxPadrao);
+    return {
+      quarteirao: q,
+      r: limparNumeroStr(item.r ?? item.R ?? ''),
+      c: limparNumeroStr(item.c ?? item.C ?? ''),
+      tb: limparNumeroStr(item.tb ?? item.TB ?? ''),
+      pe: limparNumeroStr(item.pe ?? item.PE ?? ''),
+      o: limparNumeroStr(item.o ?? item.O ?? '')
+    };
+  };
+
+  const toList = (col: any): any[] => {
+    if (!col) return [];
+    if (Array.isArray(col)) return col;
+    if (typeof col === 'object') {
+      return Object.keys(col)
+        .sort((a, b) => Number(a) - Number(b))
+        .map((k) => col[k]);
+    }
+    return [];
+  };
+
+  const l1 = toList(src.tabela1 || src.tabela_1 || src.tab1);
+  const l2 = toList(src.tabela2 || src.tabela_2 || src.tab2);
+
+  const tabela1: ReconhecimentoLinha[] = [];
+  const tabela2: ReconhecimentoLinha[] = [];
+  for (let i = 0; i < 32; i++) {
+    tabela1.push(mapear(l1[i], i + 1));
+    tabela2.push(mapear(l2[i], i + 33));
+  }
+
+  return {
+    cabecalho: {
+      uf: String(cab.uf || cab.UF || ''),
+      distrito: String(cab.distrito || cab.Distrito || ''),
+      municipio: String(cab.municipio || cab.Municipio || ''),
+      localidade: String(cab.localidade || cab.Localidade || ''),
+      subdistrito: String(cab.subdistrito || cab.Subdistrito || ''),
+      sublocal: String(cab.sublocal || cab.Sublocal || ''),
+      categoria: String(cab.categoria || cab.Categoria || '')
+    },
+    tabela1,
+    tabela2
+  };
+}
+
+function contarPreenchidosBridge(rec: ReconhecimentoPayload | null): number {
+  if (!rec) return 0;
+  let total = 0;
+  [...rec.tabela1, ...rec.tabela2].forEach((l) => {
+    if (l.r !== '' || l.c !== '' || l.tb !== '' || l.pe !== '' || l.o !== '') total++;
+  });
+  return total;
 }
 
 export default function App() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const pmcdIframeRef = useRef<HTMLIFrameElement>(null);
+
+  const [activeModule, setActiveModule] = useState<'pmcd' | 'liraa'>(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const m = params.get('modulo');
+      if (m === 'liraa' || m === 'pmcd') return m;
+      const saved = localStorage.getItem('sistema_integrado_modulo_ativo');
+      if (saved === 'liraa' || saved === 'pmcd') return saved;
+    } catch {
+      // ignore
+    }
+    return 'pmcd';
+  });
+
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [cloudStatus, setCloudStatus] = useState<'sincronizado' | 'salvando' | 'offline' | 'desconectado'>('desconectado');
+  const [pmcdSyncStatus, setPmcdSyncStatus] = useState<'conectado' | 'sincronizando' | 'local'>('local');
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
+
+  const pmcdIframeSrc = React.useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    const qs = params.toString();
+    return qs ? `/pmcd-campo.html?${qs}` : '/pmcd-campo.html';
+  }, []);
+
+  const showToast = (msg: string) => {
+    setToastMsg(msg);
+    window.setTimeout(() => {
+      setToastMsg((curr) => (curr === msg ? null : curr));
+    }, 3500);
+  };
+
+  // References for functions accessible across effect and handlers
+  const coletarDadosRef = useRef<() => any>(() => null);
+  const restaurarDadosRef = useRef<(dados: any) => void>(() => {});
+  const aplicarReconhecimentoRef = useRef<(rec: any, silent?: boolean) => void>(() => {});
+  const converterParaReconhecimentoRef = useRef<(dados: any) => ReconhecimentoPayload | null>(() => null);
+  const ultimaAssinaturaSyncRef = useRef<string>('');
+  const bloqueioSyncLoopRef = useRef<boolean>(false);
+
+  const handleSelectModule = (mod: 'pmcd' | 'liraa', pmcdAba?: string) => {
+    setActiveModule(mod);
+    try {
+      localStorage.setItem('sistema_integrado_modulo_ativo', mod);
+    } catch {
+      // ignore
+    }
+    if (mod === 'pmcd' && pmcdAba && pmcdIframeRef.current?.contentWindow) {
+      try {
+        pmcdIframeRef.current.contentWindow.postMessage(
+          { type: 'PMCD_SWITCH_TAB', aba: pmcdAba },
+          window.location.origin
+        );
+      } catch {
+        // ignore
+      }
+    }
+  };
+
+  useEffect(() => {
+    testConnection();
+
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+      setCurrentUser(user);
+      setIsAuthLoading(false);
+      if (user) {
+        setCloudStatus('salvando');
+        try {
+          const docId = `liraa_${user.uid}`;
+          const docSnap = await getDoc(doc(db, 'liraa_forms', docId));
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            if (restaurarDadosRef.current && data) {
+              restaurarDadosRef.current(data);
+            }
+            setCloudStatus('sincronizado');
+          } else {
+            // Document doesn't exist yet in cloud: sync current local data to cloud
+            const localData = coletarDadosRef.current();
+            if (localData && localData.cabecalho) {
+              await setDoc(doc(db, 'liraa_forms', docId), {
+                id: docId,
+                ownerId: user.uid,
+                cabecalho: localData.cabecalho,
+                linhas: localData.linhas,
+                updatedAt: new Date().toISOString(),
+                createdAt: new Date().toISOString()
+              });
+            }
+            setCloudStatus('sincronizado');
+          }
+        } catch (err) {
+          console.warn('Erro ao carregar do Firestore:', err);
+          setCloudStatus('offline');
+        }
+      } else {
+        setCloudStatus('desconectado');
+      }
+    });
+
+    // Bridge: escuta mensagens do módulo PMCD (iframe) e alterações em tempo real no RTDB compartilhado
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      const msg = event.data;
+      if (!msg || typeof msg !== 'object') return;
+
+      if (msg.type === 'PMCD_READY') {
+        setPmcdSyncStatus('conectado');
+        // Se LIRAa já tiver dados preenchidos e PMCD estiver vazio, envia LIRAa -> PMCD
+        const liraaAtual = coletarDadosRef.current();
+        const liraaRec = converterParaReconhecimentoRef.current(liraaAtual);
+        const pmcdRec = normalizarReconhecimentoParaBridge(msg.payload);
+        if (liraaRec && contarPreenchidosBridge(liraaRec) > 0 && contarPreenchidosBridge(pmcdRec) === 0) {
+          try {
+            pmcdIframeRef.current?.contentWindow?.postMessage(
+              { type: 'LIRAA_SYNC_RECONHECIMENTO', payload: liraaRec },
+              window.location.origin
+            );
+          } catch {
+            // ignore
+          }
+        }
+      } else if (msg.type === 'PMCD_RECONHECIMENTO_UPDATED' && msg.payload) {
+        const norm = normalizarReconhecimentoParaBridge(msg.payload);
+        if (!norm) return;
+        const sig = JSON.stringify(norm);
+        if (sig === ultimaAssinaturaSyncRef.current) return;
+        ultimaAssinaturaSyncRef.current = sig;
+        aplicarReconhecimentoRef.current(norm, true);
+        setPmcdSyncStatus('conectado');
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+
+    let firstRtdbEmit = true;
+    const unsubscribeRtdb = subscribeReconhecimentoRtdb((raw) => {
+      const norm = normalizarReconhecimentoParaBridge(raw);
+      if (!norm) return;
+      setPmcdSyncStatus('conectado');
+      const sig = JSON.stringify(norm);
+      if (sig === ultimaAssinaturaSyncRef.current) {
+        firstRtdbEmit = false;
+        return;
+      }
+
+      // Na carga inicial, só preenche LIRAa automaticamente se LIRAa ainda estiver vazio nas linhas 1-64
+      const atualLiraa = converterParaReconhecimentoRef.current(coletarDadosRef.current());
+      const qAtual = contarPreenchidosBridge(atualLiraa);
+      const qNuvem = contarPreenchidosBridge(norm);
+
+      if (firstRtdbEmit) {
+        firstRtdbEmit = false;
+        if (qAtual === 0 && qNuvem > 0) {
+          ultimaAssinaturaSyncRef.current = sig;
+          aplicarReconhecimentoRef.current(norm, true);
+        }
+        return;
+      }
+
+      if (qNuvem > 0 || qAtual === 0) {
+        ultimaAssinaturaSyncRef.current = sig;
+        aplicarReconhecimentoRef.current(norm, true);
+      }
+    });
+
+    return () => {
+      unsubscribeAuth();
+      window.removeEventListener('message', handleMessage);
+      unsubscribeRtdb();
+    };
+  }, []);
 
   useEffect(() => {
     const STORAGE_KEY = 'LIRAA_FORM_DATA_STORAGE';
@@ -287,7 +555,7 @@ export default function App() {
       });
     }
 
-    (window as any).limparSelecoes = function () {
+    window.limparSelecoes = function () {
       selecionadas.forEach((tr) => tr.classList.remove('selecionada'));
       selecionadas.clear();
       atualizarTabelaLiraa();
@@ -835,7 +1103,7 @@ export default function App() {
         statusEl.style.color = '#d97706';
       }
 
-      timeoutSalvar = setTimeout(() => {
+      timeoutSalvar = setTimeout(async () => {
         const dados = coletarDadosCompletos();
         try {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(dados));
@@ -849,7 +1117,50 @@ export default function App() {
             statusEl.style.color = '#b91c1c';
           }
         }
-      }, 250);
+
+        // Sincronização em nuvem com o Firebase Firestore se autenticado
+        if (auth.currentUser) {
+          try {
+            setCloudStatus('salvando');
+            const docId = `liraa_${auth.currentUser.uid}`;
+            await setDoc(doc(db, 'liraa_forms', docId), {
+              id: docId,
+              ownerId: auth.currentUser.uid,
+              cabecalho: dados.cabecalho,
+              linhas: dados.linhas,
+              updatedAt: new Date().toISOString()
+            }, { merge: true });
+            setCloudStatus('sincronizado');
+          } catch (cloudErr) {
+            console.warn('Erro ao salvar no Firestore:', cloudErr);
+            setCloudStatus('offline');
+          }
+        }
+
+        // Sincronização automática LIRAa -> PMCD (Resumo de Reconhecimento) e RTDB
+        if (!bloqueioSyncLoopRef.current) {
+          const recPayload = converterLiraaParaReconhecimento(dados);
+          if (recPayload) {
+            const sig = JSON.stringify(recPayload);
+            if (sig !== ultimaAssinaturaSyncRef.current) {
+              ultimaAssinaturaSyncRef.current = sig;
+              try {
+                pmcdIframeRef.current?.contentWindow?.postMessage(
+                  { type: 'LIRAA_SYNC_RECONHECIMENTO', payload: recPayload },
+                  window.location.origin
+                );
+              } catch {
+                // ignore
+              }
+              if (contarPreenchidosBridge(recPayload) > 0) {
+                setPmcdSyncStatus('sincronizando');
+                const ok = await pushReconhecimentoToRtdb(recPayload);
+                setPmcdSyncStatus(ok ? 'conectado' : 'local');
+              }
+            }
+          }
+        }
+      }, 350);
     }
 
     function coletarDadosCompletos() {
@@ -912,7 +1223,132 @@ export default function App() {
       atualizarTabelaLiraa();
     }
 
-    (window as any).exportarBackup = function () {
+    function converterLiraaParaReconhecimento(dados: any): ReconhecimentoPayload | null {
+      if (!dados || typeof dados !== 'object') return null;
+      const cab = dados.cabecalho || {};
+      const linhas = Array.isArray(dados.linhas) ? dados.linhas : [];
+
+      const byPos = new Map<number, any>();
+      linhas.forEach((l: any) => {
+        const p = parseInt(String(l.pos || ''), 10);
+        if (!isNaN(p) && p >= 1 && p <= 64) {
+          byPos.set(p, l);
+        }
+      });
+
+      const buildRow = (pos: number): ReconhecimentoLinha => {
+        const item = byPos.get(pos);
+        const cel = Array.isArray(item?.celulas) ? item.celulas : [];
+        return {
+          quarteirao: String(cel[0] || '').trim() || String(pos),
+          r: String(cel[1] || '').trim(),
+          c: String(cel[2] || '').trim(),
+          tb: String(cel[3] || '').trim(),
+          pe: String(cel[4] || '').trim(),
+          o: String(cel[5] || '').trim()
+        };
+      };
+
+      const tabela1: ReconhecimentoLinha[] = [];
+      const tabela2: ReconhecimentoLinha[] = [];
+      for (let i = 1; i <= 32; i++) tabela1.push(buildRow(i));
+      for (let i = 33; i <= 64; i++) tabela2.push(buildRow(i));
+
+      return {
+        cabecalho: {
+          uf: String(cab.uf || '').trim(),
+          distrito: String(cab.distrito || '').trim(),
+          municipio: String(cab.municipio || '').trim(),
+          localidade: String(cab.localidade || '').trim(),
+          subdistrito: String(cab.subdistrito || '').trim(),
+          sublocal: String(cab.sublocal || '').trim(),
+          categoria: String(cab.categoria || '').trim()
+        },
+        tabela1,
+        tabela2
+      };
+    }
+
+    function aplicarReconhecimentoNoDOM(recRaw: any, silent = false) {
+      const rec = normalizarReconhecimentoParaBridge(recRaw);
+      if (!rec) return;
+
+      bloqueioSyncLoopRef.current = true;
+      try {
+        const cabMap: Record<string, string> = {
+          uf: rec.cabecalho.uf,
+          distrito: rec.cabecalho.distrito,
+          municipio: rec.cabecalho.municipio,
+          localidade: rec.cabecalho.localidade,
+          subdistrito: rec.cabecalho.subdistrito,
+          sublocal: rec.cabecalho.sublocal,
+          categoria: rec.cabecalho.categoria
+        };
+
+        Object.keys(cabMap).forEach((chave) => {
+          if (cabMap[chave] !== undefined) {
+            document.querySelectorAll<HTMLElement>(`[data-sync="${chave}"]`).forEach((campo) => {
+              if (campo.textContent !== cabMap[chave]) {
+                campo.textContent = cabMap[chave];
+              }
+            });
+          }
+        });
+
+        const aplicarGrupo = (lista: ReconhecimentoLinha[], offset: number) => {
+          lista.forEach((linha, idx) => {
+            const pos = offset + idx + 1;
+            const tr = document.querySelector<HTMLTableRowElement>(`.tabela-dados tbody tr[data-posicao="${pos}"]`);
+            if (!tr) return;
+            const qVal = linha.quarteirao && linha.quarteirao !== String(pos) ? linha.quarteirao : '';
+            const temImoveis = linha.r !== '' || linha.c !== '' || linha.tb !== '' || linha.pe !== '' || linha.o !== '';
+            const valores = [
+              temImoveis ? (linha.quarteirao || String(pos)) : qVal,
+              linha.r || '',
+              linha.c || '',
+              linha.tb || '',
+              linha.pe || '',
+              linha.o || ''
+            ];
+            valores.forEach((v, cIdx) => {
+              const cell = tr.children[cIdx + 1] as HTMLElement;
+              if (cell && cell.textContent !== v) {
+                cell.textContent = v;
+              }
+            });
+            recalcularTotalLinha(tr);
+          });
+        };
+
+        aplicarGrupo(rec.tabela1, 0);
+        aplicarGrupo(rec.tabela2, 32);
+        recalcularTodosOsTotais();
+        atualizarTabelaLiraa();
+
+        const dados = coletarDadosCompletos();
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(dados));
+        } catch {
+          // ignore
+        }
+
+        if (!silent) {
+          showToast(`Dados recebidos do PMCD (${contarPreenchidosBridge(rec)} quarteirões)!`);
+        }
+      } finally {
+        window.setTimeout(() => {
+          bloqueioSyncLoopRef.current = false;
+        }, 500);
+      }
+    }
+
+    // Attach to refs so React handlers can use them
+    coletarDadosRef.current = coletarDadosCompletos;
+    restaurarDadosRef.current = restaurarDadosCompletos;
+    aplicarReconhecimentoRef.current = aplicarReconhecimentoNoDOM;
+    converterParaReconhecimentoRef.current = converterLiraaParaReconhecimento;
+
+    window.exportarBackup = function () {
       const dados = coletarDadosCompletos();
       const nomeMuni = dados.cabecalho && dados.cabecalho.municipio ? dados.cabecalho.municipio.trim().replace(/\s+/g, '_') : 'LIRAa';
       const dataHora = new Date().toISOString().slice(0, 10);
@@ -927,7 +1363,7 @@ export default function App() {
       URL.revokeObjectURL(url);
     };
 
-    (window as any).importarBackup = function (evento: any) {
+    window.importarBackup = function (evento: any) {
       const arquivo = evento.target.files[0];
       if (!arquivo) return;
 
@@ -946,7 +1382,7 @@ export default function App() {
       evento.target.value = '';
     };
 
-    (window as any).limparTudo = function () {
+    window.limparTudo = function () {
       if (!confirm('Deseja realmente apagar todos os dados digitados e seleções feitas? Esta ação não pode ser desfeita.')) return;
 
       document.querySelectorAll<HTMLElement>('[data-sync]').forEach((c) => (c.textContent = ''));
@@ -973,11 +1409,11 @@ export default function App() {
       }
     };
 
-    (window as any).gerarPDF = async function () {
+    window.gerarPDF = async function () {
       const btn = document.getElementById('btn-pdf-acao') as HTMLButtonElement;
       if (!btn) return;
       const textoOriginal = btn.innerHTML;
-      btn.innerHTML = '⏳ Processando...';
+      btn.innerHTML = '⏳ Gerando PDF...';
       btn.disabled = true;
 
       if (document.activeElement && (document.activeElement as HTMLElement).blur) {
@@ -986,6 +1422,10 @@ export default function App() {
       limparSelecaoBloco();
       fecharMenuContexto();
       fecharCaixaColar();
+
+      const wrapper = document.querySelector<HTMLElement>('.area-documento-wrapper');
+      const scrollAntigo = wrapper ? wrapper.scrollLeft : 0;
+      if (wrapper) wrapper.scrollLeft = 0;
 
       try {
         const jsPDFCtor = (window as any).jspdf && (window as any).jspdf.jsPDF ? (window as any).jspdf.jsPDF : (window as any).jsPDF || null;
@@ -1015,7 +1455,13 @@ export default function App() {
             scale: 2,
             useCORS: true,
             logging: false,
-            backgroundColor: '#ffffff'
+            backgroundColor: '#ffffff',
+            windowWidth: 1024,
+            width: 820,
+            scrollX: 0,
+            scrollY: 0,
+            x: 0,
+            y: 0
           });
 
           const imgData = canvas.toDataURL('image/jpeg', 0.98);
@@ -1030,6 +1476,7 @@ export default function App() {
         console.error('Erro na exportação:', err);
         alert('Ocorreu um erro ao gerar o PDF. Você também pode usar "Imprimir" e salvar em PDF.');
       } finally {
+        if (wrapper) wrapper.scrollLeft = scrollAntigo;
         btn.innerHTML = textoOriginal;
         btn.disabled = false;
       }
@@ -1059,13 +1506,280 @@ export default function App() {
     };
   }, []);
 
+  const handleForcarSincronizacaoNuvem = async () => {
+    if (!currentUser) {
+      try {
+        await signInWithGoogle();
+      } catch (e) {
+        console.error('Erro no login:', e);
+      }
+      return;
+    }
+
+    setCloudStatus('salvando');
+    try {
+      const dados = coletarDadosRef.current();
+      const docId = `liraa_${currentUser.uid}`;
+      await setDoc(doc(db, 'liraa_forms', docId), {
+        id: docId,
+        ownerId: currentUser.uid,
+        cabecalho: dados.cabecalho,
+        linhas: dados.linhas,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+      setCloudStatus('sincronizado');
+      alert('Dados sincronizados com o Firebase Firestore com sucesso!');
+    } catch (err) {
+      console.error('Erro ao sincronizar:', err);
+      setCloudStatus('offline');
+      alert('Erro ao sincronizar com o Firebase. Verifique sua conexão.');
+    }
+  };
+
+  const handleLoginGoogle = async () => {
+    try {
+      await signInWithGoogle();
+    } catch (err) {
+      console.error('Erro ao logar com Google:', err);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logoutFirebase();
+      setCloudStatus('desconectado');
+    } catch (err) {
+      console.error('Erro ao sair:', err);
+    }
+  };
+
+  const handleEnviarParaPmcd = async () => {
+    const dados = coletarDadosRef.current();
+    const rec = converterParaReconhecimentoRef.current(dados);
+    if (!rec) return;
+    ultimaAssinaturaSyncRef.current = JSON.stringify(rec);
+    setPmcdSyncStatus('sincronizando');
+    try {
+      pmcdIframeRef.current?.contentWindow?.postMessage(
+        { type: 'LIRAA_SYNC_RECONHECIMENTO', payload: rec },
+        window.location.origin
+      );
+    } catch {
+      // ignore
+    }
+    const ok = await pushReconhecimentoToRtdb(rec);
+    setPmcdSyncStatus(ok ? 'conectado' : 'local');
+    const q = contarPreenchidosBridge(rec);
+    showToast(
+      ok
+        ? `Enviado para o PMCD e Nuvem Compartilhada (${q} quarteirões)!`
+        : `Sincronizado com a aba PMCD local (${q} quarteirões).`
+    );
+  };
+
+  const handlePuxarDoPmcd = async () => {
+    setPmcdSyncStatus('sincronizando');
+    const rtdbData = await fetchReconhecimentoFromRtdb();
+    if (rtdbData) {
+      const norm = normalizarReconhecimentoParaBridge(rtdbData);
+      if (norm) {
+        ultimaAssinaturaSyncRef.current = JSON.stringify(norm);
+        aplicarReconhecimentoRef.current(norm, false);
+        setPmcdSyncStatus('conectado');
+        return;
+      }
+    }
+    // Fallback: pedir ao iframe PMCD local
+    try {
+      pmcdIframeRef.current?.contentWindow?.postMessage(
+        { type: 'PMCD_REQUEST_RECONHECIMENTO' },
+        window.location.origin
+      );
+      setPmcdSyncStatus('conectado');
+      showToast('Solicitação enviada ao módulo PMCD.');
+    } catch {
+      setPmcdSyncStatus('local');
+    }
+  };
+
   return (
-    <div ref={containerRef}>
+    <div ref={containerRef} className="min-h-screen flex flex-col">
+      {/* ====== BARRA SUPERIOR DE NAVEGAÇÃO INTEGRADA ====== */}
+      <nav className="barra-sistema-integrado sticky top-0 z-50 bg-emerald-950 text-white px-3 py-2 flex flex-wrap items-center justify-between gap-2 shadow-md border-b border-emerald-800">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 pr-2 border-r border-emerald-800">
+            <span className="text-base">🦟</span>
+            <span className="font-extrabold text-xs sm:text-sm tracking-tight text-emerald-100">
+              Sistema Integrado PMCD • LIRAa
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => handleSelectModule('pmcd')}
+              className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                activeModule === 'pmcd'
+                  ? 'bg-emerald-500 text-emerald-950 shadow-sm'
+                  : 'bg-emerald-900/70 text-emerald-100 hover:bg-emerald-800 border border-emerald-700/60'
+              }`}
+            >
+              <span>🌿</span>
+              <span>PMCD - Lançamentos de Campo</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleSelectModule('liraa')}
+              className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                activeModule === 'liraa'
+                  ? 'bg-amber-400 text-slate-950 shadow-sm'
+                  : 'bg-emerald-900/70 text-emerald-100 hover:bg-emerald-800 border border-emerald-700/60'
+              }`}
+            >
+              <span>📋</span>
+              <span>Quarteirões para o LIRAa</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          {activeModule === 'liraa' ? (
+            <button
+              type="button"
+              onClick={() => handleSelectModule('pmcd', 'resumo-reconhecimento')}
+              className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-sky-600 hover:bg-sky-500 text-white transition-colors cursor-pointer"
+              title="Abrir a aba Resumo de Reconhecimento dentro do PMCD"
+            >
+              🗺️ Ver Reconhecimento no PMCD
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => handleSelectModule('pmcd', 'resumo-reconhecimento')}
+              className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-emerald-800 hover:bg-emerald-700 text-emerald-100 border border-emerald-600 transition-colors cursor-pointer"
+              title="Ir direto para o Resumo de Reconhecimento"
+            >
+              🗺️ Reconhecimento
+            </button>
+          )}
+
+          <span
+            className={`text-[11px] font-bold px-2 py-1 rounded-md border ${
+              pmcdSyncStatus === 'conectado'
+                ? 'bg-emerald-900/80 text-emerald-200 border-emerald-600'
+                : pmcdSyncStatus === 'sincronizando'
+                ? 'bg-amber-900/80 text-amber-200 border-amber-500 animate-pulse'
+                : 'bg-slate-800 text-slate-200 border-slate-600'
+            }`}
+          >
+            {pmcdSyncStatus === 'conectado' && '🔗 Ponte PMCD ↔ LIRAa Ativa'}
+            {pmcdSyncStatus === 'sincronizando' && '🔄 Sincronizando...'}
+            {pmcdSyncStatus === 'local' && '💾 Integração Local Ativa'}
+          </span>
+        </div>
+      </nav>
+
+      {toastMsg && (
+        <div className="toast-sistema-integrado fixed bottom-4 right-4 z-[9999] bg-emerald-900 text-white text-xs font-bold px-4 py-2.5 rounded-lg shadow-xl border border-emerald-500">
+          {toastMsg}
+        </div>
+      )}
+
+      {/* ====== MÓDULO 1: PMCD - LANÇAMENTOS DE CAMPO (index.html integrado) ====== */}
+      <div className={`pmcd-module-container flex-1 min-h-0 w-full ${activeModule === 'pmcd' ? 'flex flex-col' : 'hidden'}`}>
+        <iframe
+          ref={pmcdIframeRef}
+          src={pmcdIframeSrc}
+          title="PMCD - Lançamentos de Campo"
+          className="w-full flex-1 border-0 block bg-[#f4f6f5]"
+        />
+      </div>
+
+      {/* ====== MÓDULO 2: QUARTEIRÕES PARA O LIRAa (IMÓVEIS BASES) ====== */}
+      <div className={`liraa-module-container ${activeModule === 'liraa' ? 'block' : 'hidden'}`}>
       <div className="topo">
         <h1>Quarteirões para o LIRAa</h1>
         <p>Imóveis bases</p>
-        <div className="status-salvamento" id="status-storage">
-          ● Salvo no navegador
+
+        <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
+          <div className="status-salvamento" id="status-storage">
+            ● Salvo no navegador
+          </div>
+
+          {/* STATUS DO FIREBASE FIRESTORE */}
+          <div
+            className={`inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full border transition-all ${
+              cloudStatus === 'sincronizado'
+                ? 'bg-amber-50 text-amber-900 border-amber-300'
+                : cloudStatus === 'salvando'
+                ? 'bg-blue-50 text-blue-800 border-blue-300 animate-pulse'
+                : cloudStatus === 'offline'
+                ? 'bg-red-50 text-red-700 border-red-300'
+                : 'bg-gray-100 text-gray-600 border-gray-300'
+            }`}
+          >
+            <span>🔥 Firebase:</span>
+            <span>
+              {cloudStatus === 'sincronizado' && 'Nuvem Conectada e Sincronizada'}
+              {cloudStatus === 'salvando' && 'Sincronizando com Firestore...'}
+              {cloudStatus === 'offline' && 'Offline (Salvo localmente)'}
+              {cloudStatus === 'desconectado' && 'Banco Provisionado (Não autenticado)'}
+            </span>
+          </div>
+
+          {/* BOTÃO LOGIN/LOGOUT GOOGLE FIREBASE */}
+          {!isAuthLoading && (
+            <div className="inline-flex items-center gap-2">
+              {currentUser ? (
+                <div className="inline-flex items-center gap-2 bg-white px-2 py-0.5 rounded-full border border-gray-300 text-xs shadow-xs">
+                  {currentUser.photoURL && (
+                    <img
+                      src={currentUser.photoURL}
+                      alt={currentUser.displayName || 'Usuário'}
+                      className="w-5 h-5 rounded-full"
+                    />
+                  )}
+                  <span className="font-bold text-gray-800 truncate max-w-[120px]">
+                    {currentUser.displayName?.split(' ')[0] || currentUser.email}
+                  </span>
+                  <button
+                    onClick={handleLogout}
+                    className="text-[11px] font-bold text-red-600 hover:text-red-800 hover:underline cursor-pointer ml-1"
+                    title="Desconectar conta Google"
+                  >
+                    Sair
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={handleLoginGoogle}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white hover:bg-gray-50 border border-gray-300 text-xs font-bold text-gray-800 shadow-xs cursor-pointer transition-colors"
+                  title="Conectar com conta Google para backup automático no Firestore"
+                >
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24">
+                    <path
+                      fill="#4285F4"
+                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                    />
+                    <path
+                      fill="#EA4335"
+                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                    />
+                  </svg>
+                  <span>Entrar com Google</span>
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -1075,6 +1789,30 @@ export default function App() {
         </button>
         <button className="btn btn-print" onClick={() => window.print()}>
           🖨️ Imprimir (Ctrl+P)
+        </button>
+        <button
+          className="btn"
+          style={{ background: '#0284c7', color: '#fff' }}
+          onClick={handleEnviarParaPmcd}
+          title="Enviar quarteirões 1 a 64 e cabeçalho para o Resumo de Reconhecimento do PMCD"
+        >
+          📤 Enviar p/ PMCD
+        </button>
+        <button
+          className="btn"
+          style={{ background: '#0f766e', color: '#fff' }}
+          onClick={handlePuxarDoPmcd}
+          title="Importar quarteirões 1 a 64 e cabeçalho do Resumo de Reconhecimento do PMCD"
+        >
+          📥 Puxar do PMCD
+        </button>
+        <button
+          className="btn"
+          style={{ background: '#d97706', color: '#fff' }}
+          onClick={handleForcarSincronizacaoNuvem}
+          title="Salvar no Firebase Firestore na nuvem"
+        >
+          ☁️ Salvar no Firebase
         </button>
         <button className="btn btn-backup" onClick={() => (window as any).exportarBackup()}>
           💾 Exportar Backup (.json)
@@ -1098,56 +1836,62 @@ export default function App() {
       </div>
 
       <div className="aviso">
-        <strong>Salvamento Automático Ativo:</strong> Seus dados ficam salvos neste navegador. Você pode fechar a página ou desligar o computador com segurança. Utilize <strong>Exportar Backup</strong> para salvar uma cópia definitiva em seu computador.
+        <strong>Salvamento Automático Ativo:</strong> Seus dados ficam salvos localmente no navegador e integrados com o <strong>Firebase Firestore</strong> na nuvem Google. Conecte sua conta Google no topo para manter os quarteirões sincronizados em tempo real entre computadores e celulares.
         <br />
         <strong>Dica (computador):</strong> clique e arraste o mouse sobre várias células para selecioná-las em bloco; use <strong>Ctrl+C</strong>, <strong>Ctrl+X</strong>, <strong>Ctrl+V</strong> e <strong>Delete</strong>. Clique com o <strong>botão direito</strong> numa seleção para abrir o menu.
         <br />
         <strong>Dica (tablet/celular):</strong> arraste o dedo sobre as células para selecionar em bloco e faça <strong>toque longo</strong> (~0,5 s) sobre a seleção para abrir o menu.
       </div>
 
-      <div id="conteudo-pdf">
-        {/* ===================== PÁGINA 1 ===================== */}
-        <div className="folha-a4" data-pdf-folha>
-          <div>
-            <div className="folha-cabecalho-titulo">
-              <h2>Quarteirões para o LIRAa</h2>
-              <span>Imóveis bases • Página 1</span>
-            </div>
+      <div className="aviso-mobile-layout">
+        <span>↔</span>
+        <span>
+          <strong>Visualização Padronizada (Padrão Desktop / A4):</strong> Deslize horizontalmente para visualizar e preencher as colunas lado a lado.
+        </span>
+      </div>
 
-            <table className="tabela-identificacao">
-              <tbody>
-                <tr>
-                  <td className="campo-label">Unidade Federal:</td>
-                  <td className="campo-valor" contentEditable="true" data-sync="uf" spellCheck={false}></td>
-                  <td className="campo-label">Subdistrito:</td>
-                  <td className="campo-valor" contentEditable="true" data-sync="subdistrito" spellCheck={false}></td>
-                </tr>
-                <tr>
-                  <td className="campo-label">Distrito:</td>
-                  <td className="campo-valor" contentEditable="true" data-sync="distrito" spellCheck={false}></td>
-                  <td className="campo-label">Sublocal:</td>
-                  <td className="campo-valor" contentEditable="true" data-sync="sublocal" spellCheck={false}></td>
-                </tr>
-                <tr>
-                  <td className="campo-label">Município:</td>
-                  <td className="campo-valor" contentEditable="true" data-sync="municipio" spellCheck={false}></td>
-                  <td className="campo-label">Categoria:</td>
-                  <td className="campo-valor" contentEditable="true" data-sync="categoria" spellCheck={false}></td>
-                </tr>
-                <tr>
-                  <td className="campo-label">Localidade:</td>
-                  <td className="campo-valor" contentEditable="true" data-sync="localidade" spellCheck={false}></td>
-                  <td className="campo-label">Total de Quarteirões:</td>
-                  <td className="campo-valor campo-total-quarteiroes" contentEditable="true" data-sync="total_quart" spellCheck={false}>
-                    0
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+      <div className="area-documento-wrapper">
+        <div id="conteudo-pdf">
+          {/* ===================== PÁGINA 1 ===================== */}
+          <div className="folha-a4" data-pdf-folha>
+            <div>
+              <div className="folha-cabecalho-titulo">
+                <h2>Quarteirões para o LIRAa</h2>
+                <span>Imóveis bases • Página 1</span>
+              </div>
 
-            <div className="dica-rolagem">← Deslize a tabela para os lados para ver todas as colunas →</div>
+              <table className="tabela-identificacao">
+                <tbody>
+                  <tr>
+                    <td className="campo-label">Unidade Federal:</td>
+                    <td className="campo-valor" contentEditable="true" data-sync="uf" spellCheck={false}></td>
+                    <td className="campo-label">Subdistrito:</td>
+                    <td className="campo-valor" contentEditable="true" data-sync="subdistrito" spellCheck={false}></td>
+                  </tr>
+                  <tr>
+                    <td className="campo-label">Distrito:</td>
+                    <td className="campo-valor" contentEditable="true" data-sync="distrito" spellCheck={false}></td>
+                    <td className="campo-label">Sublocal:</td>
+                    <td className="campo-valor" contentEditable="true" data-sync="sublocal" spellCheck={false}></td>
+                  </tr>
+                  <tr>
+                    <td className="campo-label">Município:</td>
+                    <td className="campo-valor" contentEditable="true" data-sync="municipio" spellCheck={false}></td>
+                    <td className="campo-label">Categoria:</td>
+                    <td className="campo-valor" contentEditable="true" data-sync="categoria" spellCheck={false}></td>
+                  </tr>
+                  <tr>
+                    <td className="campo-label">Localidade:</td>
+                    <td className="campo-valor" contentEditable="true" data-sync="localidade" spellCheck={false}></td>
+                    <td className="campo-label">Total de Quarteirões:</td>
+                    <td className="campo-valor campo-total-quarteiroes" contentEditable="true" data-sync="total_quart" spellCheck={false}>
+                      0
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
 
-            <div className="grid-duplo">
+              <div className="grid-duplo">
               <div className="coluna-tabela">
                 <div className="wrapper-tabela">
                   <table id="tabela-1" className="tabela-dados" data-offset="0">
@@ -1218,59 +1962,52 @@ export default function App() {
 
           <div className="rodape-pagina1">
             <table className="tabela-resumo">
+              <colgroup>
+                <col style={{ width: '16%' }} />
+                <col style={{ width: '16%' }} />
+                <col style={{ width: '16%' }} />
+                <col style={{ width: '16%' }} />
+                <col style={{ width: '16%' }} />
+                <col style={{ width: '20%' }} />
+              </colgroup>
               <thead>
                 <tr>
-                  <th colSpan={2}>Resumo Geral de Imóveis</th>
+                  <th colSpan={6} className="resumo-titulo">
+                    Resumo Geral de Imóveis
+                  </th>
+                </tr>
+                <tr>
+                  <th className="resumo-tipo">R</th>
+                  <th className="resumo-tipo">C</th>
+                  <th className="resumo-tipo">TB</th>
+                  <th className="resumo-tipo">PE</th>
+                  <th className="resumo-tipo">O</th>
+                  <th className="resumo-tipo resumo-tipo-total">TOTAL</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td className="label-resumo">R (Residencial)</td>
                   <td className="valor-resumo" id="resumo-r">
                     0
                   </td>
-                </tr>
-                <tr>
-                  <td className="label-resumo">C (Comércio)</td>
                   <td className="valor-resumo" id="resumo-c">
                     0
                   </td>
-                </tr>
-                <tr>
-                  <td className="label-resumo">TB (Terreno Baldio)</td>
                   <td className="valor-resumo" id="resumo-tb">
                     0
                   </td>
-                </tr>
-                <tr>
-                  <td className="label-resumo">PE (Ponto Estratégico)</td>
                   <td className="valor-resumo" id="resumo-pe">
                     0
                   </td>
-                </tr>
-                <tr>
-                  <td className="label-resumo">O (Outros)</td>
                   <td className="valor-resumo" id="resumo-o">
                     0
                   </td>
-                </tr>
-                <tr className="total-geral">
-                  <td className="label-resumo" style={{ background: '#0f172a', color: '#fff' }}>
-                    TOTAL GERAL
-                  </td>
-                  <td className="valor-resumo" id="resumo-total" style={{ background: '#0f172a', color: '#fff' }}>
+                  <td className="valor-resumo valor-resumo-total" id="resumo-total">
                     0
                   </td>
                 </tr>
               </tbody>
             </table>
-
-            <div className="bloco-assinatura">
-              <strong>Controle e Validação dos Imóveis Bases</strong>
-              <br />
-              <span>Declaro que os dados dos estratos e contagem dos quarteirões conferem com o cadastro de campo atualizado.</span>
-              <div className="linha-campo-ass">Assinatura do Supervisor / Coordenador</div>
-            </div>
           </div>
         </div>
 
@@ -1312,8 +2049,6 @@ export default function App() {
                 </tr>
               </tbody>
             </table>
-
-            <div className="dica-rolagem">← Deslize a tabela para os lados para ver todas as colunas →</div>
 
             <div className="grid-duplo">
               <div className="coluna-tabela">
@@ -1384,16 +2119,6 @@ export default function App() {
             </div>
           </div>
 
-          <div className="rodape-pagina2">
-            <strong>Observações e Ocorrências de Campo:</strong>
-            <br />
-            <div style={{ height: '34px', borderBottom: '1px dotted #94a3b8', marginTop: '4px' }}></div>
-            <div style={{ marginTop: '6px', display: 'flex', justifyContent: 'space-between', fontSize: '8.5px', flexWrap: 'wrap', gap: '6px' }}>
-              <span>Data de Levantamento: ____/____/________</span>
-              <span>Município/Estrato: _________________________</span>
-              <span>Equipe Responsável: _________________________</span>
-            </div>
-          </div>
         </div>
 
         {/* ===================== PÁGINA 3: TABELA LIRAa ===================== */}
@@ -1440,8 +2165,6 @@ export default function App() {
               </tbody>
             </table>
 
-            <div className="dica-rolagem">← Deslize a tabela para os lados para ver todas as colunas →</div>
-
             <div className="wrapper-tabela">
               <table id="tabela-liraa">
                 <colgroup>
@@ -1473,6 +2196,7 @@ export default function App() {
             </div>
           </div>
         </div>
+      </div>
       </div>
 
       {/* ====== MENU DE CONTEXTO ====== */}
@@ -1507,6 +2231,7 @@ export default function App() {
             Aplicar
           </button>
         </div>
+      </div>
       </div>
     </div>
   );

@@ -24,9 +24,13 @@
 body {
   font-family: Arial, Helvetica, sans-serif;
   margin: 0;
-  padding: 16px;
+  padding: 0;
   background: #e2e8f0;
   color: #000;
+}
+
+.liraa-module-container {
+  padding: 16px;
 }
 
 .topo {
@@ -153,7 +157,8 @@ body {
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: flex-start;
+  box-sizing: border-box;
 }
 
 .folha-cabecalho-titulo {
@@ -237,15 +242,32 @@ table#tabela-liraa {
   table-layout: fixed;
 }
 
+table.tabela-dados thead tr,
+table#tabela-liraa thead tr {
+  height: 20px;
+}
+
+table.tabela-dados tbody tr,
+table#tabela-liraa tbody tr {
+  height: 19.5px;
+  min-height: 19.5px;
+  max-height: 19.5px;
+}
+
 thead th {
   background: var(--cabecalho-tabela);
   color: #ffffff;
   font-weight: 700;
-  padding: 3.5px 1px;
+  padding: 0 1px;
   font-size: 8.8px;
   text-align: center;
   border: 1px solid var(--borda-preta);
   white-space: nowrap;
+  height: 20px;
+  line-height: 20px;
+  vertical-align: middle;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 thead th.col-liraa {
   background: var(--cabecalho-liraa);
@@ -254,12 +276,30 @@ thead th.col-liraa {
 
 td {
   border: 1px solid var(--borda-preta);
-  padding: 3.8px 1px;
+  padding: 0 2px;
   text-align: center;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
   color: #000;
-  font-size: 9.5px;
+  font-size: 9px;
+  height: 19.5px;
+  min-height: 19.5px;
+  max-height: 19.5px;
+  line-height: 19.5px;
+  vertical-align: middle;
+  box-sizing: border-box;
+}
+
+/* Garante que células vazias mantenham a altura idêntica às preenchidas */
+td:empty::before,
+td.editavel:empty::before,
+td.total-linha:empty::before,
+td.liraa-calc:empty::before {
+  content: "\00a0";
+  visibility: hidden;
+  display: inline-block;
+  line-height: inherit;
 }
 
 tbody tr:nth-child(even):not(.total) td {
@@ -286,7 +326,7 @@ td.liraa-calc {
   background: var(--liraa-col-bg);
   color: var(--liraa-col-texto);
   font-weight: 800;
-  font-size: 10px;
+  font-size: 9.5px;
 }
 
 td.editavel {
@@ -322,8 +362,12 @@ tr.total td {
   background: #0f172a !important;
   color: #fff !important;
   font-weight: bold;
-  padding: 4px 1px;
+  padding: 0 1px;
+  height: 20px;
+  line-height: 20px;
+  vertical-align: middle;
   border: 1px solid var(--borda-preta);
+  box-sizing: border-box;
 }
 tr.total td[data-col="7"] {
   background: #334155 !important;
@@ -334,71 +378,68 @@ tr.total td[data-col="8"] {
 }
 
 .rodape-pagina1 {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  margin-top: 8px;
-  gap: 16px;
+  margin-top: 14px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .tabela-resumo {
-  width: 290px;
+  width: 100%;
   border: 1.5px solid #000;
-  margin-right: auto;
   border-collapse: collapse;
+  font-size: 9.5px;
+  box-sizing: border-box;
+  table-layout: fixed;
+  font-variant-numeric: tabular-nums;
 }
-.tabela-resumo th {
+.tabela-resumo th.resumo-titulo {
   background: #0f172a;
   color: #fff;
-  padding: 3.5px;
-  font-size: 9px;
+  padding: 4px 6px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
   text-transform: uppercase;
   border: 1px solid #000;
+  height: 24px;
+  line-height: 16px;
+  text-align: center;
 }
-.tabela-resumo td {
-  padding: 2.8px 6px;
-  font-size: 9px;
-  font-weight: bold;
+.tabela-resumo th.resumo-tipo {
+  background: var(--cabecalho-tabela);
+  color: #fff;
+  padding: 3px 4px;
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
   border: 1px solid #000;
+  height: 22px;
+  line-height: 16px;
+  text-align: center;
 }
-.tabela-resumo td.label-resumo {
-  background: #f1f5f9;
-  text-align: left;
-  width: 65%;
+.tabela-resumo th.resumo-tipo-total {
+  background: #334155;
+  font-weight: 800;
 }
 .tabela-resumo td.valor-resumo {
   background: #fff;
-  text-align: right;
-}
-.tabela-resumo tr.total-geral td {
-  background: #0f172a !important;
-  color: #fff !important;
-  font-weight: 900;
-}
-
-.bloco-assinatura {
-  width: 380px;
-  border: 1.5px solid #000;
-  padding: 6px 10px;
-  font-size: 8.5px;
-  background: #fafafa;
-  line-height: 1.35;
-}
-.linha-campo-ass {
-  border-bottom: 1px solid #000;
-  margin-top: 18px;
+  color: #000;
+  padding: 4px 6px;
+  font-size: 11px;
+  font-weight: 800;
+  border: 1px solid #000;
+  height: 26px;
+  min-height: 26px;
+  max-height: none;
+  line-height: 18px;
   text-align: center;
-  font-size: 8.5px;
-  font-weight: bold;
-  padding-top: 2px;
+  box-sizing: border-box;
 }
-
-.rodape-pagina2 {
-  margin-top: 8px;
-  border: 1.5px solid #000;
-  padding: 6px 10px;
-  background: #fafafa;
-  font-size: 9px;
+.tabela-resumo td.valor-resumo-total {
+  background: var(--total-col-bg);
+  color: #000;
+  font-weight: 900;
+  font-size: 11.5px;
 }
 
 .vazio {
@@ -542,154 +583,99 @@ td.celula-ancora {
 }
 
 /* ============================================================
-   RESPONSIVO: TABLET / CELULAR
+   RESPONSIVO: TABLET / CELULAR (PRESERVAÇÃO DO PADRÃO DESKTOP)
    ============================================================ */
+.area-documento-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 4px 0 24px;
+}
+
+.aviso-mobile-layout {
+  display: none;
+  background: #0f172a;
+  color: #f8fafc;
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin: 0 auto 12px;
+  font-size: 11.5px;
+  text-align: center;
+  max-width: 900px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+}
+
 @media (max-width: 900px) {
-  body {
-    padding: 8px;
+  .liraa-module-container {
+    padding: 8px 6px;
   }
 
-  #conteudo-pdf {
-    width: 100%;
-  }
-
-  .folha-a4 {
-    width: 100%;
-    height: auto;
-    min-height: 0;
-    padding: 12px 8px;
-    margin-bottom: 16px;
-  }
-
-  .grid-duplo {
-    display: block;
-    width: 100%;
-  }
-  .coluna-tabela {
-    display: block;
-    width: 100%;
-    margin-bottom: 14px;
-  }
-  .coluna-espaco {
-    display: none;
-  }
-
-  .wrapper-tabela {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    border: 1.5px solid var(--borda-preta);
-    background: #fff;
-  }
-  .wrapper-tabela > table.tabela-dados,
-  .wrapper-tabela > table#tabela-liraa {
-    min-width: 560px;
-    width: 100%;
-    border: 0;
-  }
-
-  table.tabela-dados td,
-  table.tabela-dados th,
-  table#tabela-liraa td,
-  table#tabela-liraa th {
-    padding: 9px 3px;
-    font-size: 11.5px;
-  }
-  table.tabela-dados td.posicao,
-  table#tabela-liraa td.posicao {
-    min-width: 44px;
-  }
-  table.tabela-dados th:first-child,
-  table#tabela-liraa th:first-child {
-    min-width: 44px;
-  }
-  table.tabela-dados th:nth-child(2),
-  table#tabela-liraa th:nth-child(2) {
-    min-width: 90px;
-  }
-
-  .tabela-identificacao,
-  .tabela-identificacao tbody,
-  .tabela-identificacao tr,
-  .tabela-identificacao td {
-    display: block;
-    width: 100%;
-  }
-  .tabela-identificacao tr {
-    border-bottom: 1px solid #000;
-  }
-  .tabela-identificacao tr:last-child {
-    border-bottom: 0;
-  }
-  .tabela-identificacao td {
-    border: 0;
-    border-bottom: 1px dotted #cbd5e1;
-    padding: 6px 8px;
-    font-size: 11px;
-    text-align: left;
-  }
-  .tabela-identificacao td.campo-label {
-    width: 100%;
-    background: #f1f5f9;
-    border-bottom: 1px solid #e2e8f0;
-    font-size: 10.5px;
-    padding: 4px 8px;
-  }
-  .tabela-identificacao td.campo-valor {
-    width: 100%;
-    padding: 8px;
-    font-size: 12.5px;
-    min-height: 34px;
+  .aviso-mobile-layout {
     display: flex;
     align-items: center;
+    justify-content: center;
+    gap: 6px;
   }
 
-  .folha-cabecalho-titulo h2 {
-    font-size: 15px;
+  .topo h1 {
+    font-size: 18px;
   }
-  .folha-cabecalho-titulo span {
-    font-size: 11.5px;
-  }
-
-  .btn {
-    padding: 10px 14px;
-    font-size: 13px;
-  }
-
-  .menu-contexto button {
-    padding: 12px 14px;
-    font-size: 14px;
-    min-height: 44px;
-  }
-
-  .rodape-pagina1 {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-  }
-  .tabela-resumo {
-    width: 100%;
-  }
-  .bloco-assinatura {
-    width: 100%;
-  }
-
-  .tabela-resumo td,
-  .tabela-resumo th {
-    padding: 6px 8px;
-    font-size: 11px;
-  }
-
-  .aviso {
+  .topo p {
     font-size: 12px;
   }
 
-  .dica-rolagem {
-    display: block;
+  .barra-acoes {
+    gap: 6px;
+    margin: 8px 0 12px;
+  }
+
+  .btn {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  .aviso {
     font-size: 11px;
-    color: #64748b;
-    text-align: center;
-    margin: -6px 0 10px;
-    font-style: italic;
+    padding: 6px 10px;
+    margin-bottom: 12px;
+  }
+
+  /* Mantém as folhas A4 no tamanho e disposição idênticos ao computador */
+  #conteudo-pdf {
+    width: 820px;
+    margin: 0 auto;
+  }
+
+  .folha-a4 {
+    width: 820px !important;
+    height: 1140px !important;
+    min-height: 1140px !important;
+    max-height: 1140px !important;
+    padding: 16px 22px !important;
+    margin: 0 auto 20px !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Tabelas lado a lado sempre mantidas */
+  .grid-duplo {
+    display: table !important;
+    width: 100% !important;
+    table-layout: fixed !important;
+  }
+  .coluna-tabela {
+    display: table-cell !important;
+    width: 49% !important;
+    vertical-align: top !important;
+  }
+  .coluna-espaco {
+    display: table-cell !important;
+    width: 2% !important;
+  }
+
+  .menu-contexto button {
+    padding: 10px 12px;
+    font-size: 13px;
+    min-height: 40px;
   }
 }
 
@@ -707,13 +693,21 @@ td.celula-ancora {
     padding: 0;
     margin: 0;
   }
+  .barra-sistema-integrado,
+  .pmcd-module-container,
+  .toast-sistema-integrado,
   .topo,
   .barra-acoes,
   .aviso,
+  .aviso-mobile-layout,
   .menu-contexto,
   .caixa-colar,
   .dica-rolagem {
     display: none !important;
+  }
+  .liraa-module-container {
+    padding: 0 !important;
+    margin: 0 !important;
   }
   #conteudo-pdf {
     width: 100% !important;
@@ -738,5 +732,15 @@ td.celula-ancora {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
     color-adjust: exact !important;
+  }
+
+  table.tabela-dados tbody tr,
+  table#tabela-liraa tbody tr {
+    height: 22px !important;
+  }
+  table.tabela-dados td,
+  table#tabela-liraa td {
+    height: 22px !important;
+    line-height: 22px !important;
   }
 }

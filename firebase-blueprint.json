@@ -1,0 +1,46 @@
+{
+  "entities": {
+    "LiraaForm": {
+      "title": "LiraaForm",
+      "description": "Formulário de Quarteirões para o LIRAa e Imóveis Bases",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Identificador único do formulário",
+          "maxLength": 128
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "UID do usuário proprietário do formulário",
+          "maxLength": 128
+        },
+        "cabecalho": {
+          "type": "object",
+          "description": "Dados do cabeçalho de identificação geográfica"
+        },
+        "linhas": {
+          "type": "array",
+          "description": "Lista de 128 quarteirões com contagem de imóveis e seleção LIRAa"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp de última atualização"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp de criação"
+        }
+      },
+      "required": ["ownerId", "cabecalho", "linhas"]
+    }
+  },
+  "firestore": {
+    "/liraa_forms/{formId}": {
+      "schema": "LiraaForm",
+      "description": "Armazena os formulários do LIRAa salvos pelos agentes e supervisores"
+    }
+  }
+}
