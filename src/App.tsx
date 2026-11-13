@@ -128,7 +128,10 @@ export default function App() {
   const pmcdIframeSrc = React.useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     const qs = params.toString();
-    return qs ? `/pmcd-campo.html?${qs}` : '/pmcd-campo.html';
+    const metaEnv = (import.meta as unknown as { env?: { BASE_URL?: string } }).env;
+    const baseUrl = metaEnv?.BASE_URL || './';
+    const path = `${baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`}pmcd-campo.html`;
+    return qs ? `${path}?${qs}` : path;
   }, []);
 
   const showToast = (msg: string) => {
